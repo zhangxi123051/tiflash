@@ -607,6 +607,7 @@ template <typename Getter>
 void SchemaBuilder<Getter>::applyDropTableImpl(const String & database_name, const String & table_name)
 {
     LOG_INFO(log, "try to drop table : " << database_name << "." << table_name);
+    /*
     auto drop_query = std::make_shared<ASTDropQuery>();
     drop_query->database = database_name;
     drop_query->table = table_name;
@@ -614,6 +615,7 @@ void SchemaBuilder<Getter>::applyDropTableImpl(const String & database_name, con
     ASTPtr ast_drop_query = drop_query;
     InterpreterDropQuery drop_interpreter(ast_drop_query, context);
     drop_interpreter.execute();
+     */
 }
 
 template <typename Getter>
@@ -675,8 +677,8 @@ void SchemaBuilder<Getter>::dropInvalidTablesAndDBs(
     }
     for (auto table : tables_to_drop)
     {
-        applyDropTableImpl(table.first, table.second);
-        LOG_DEBUG(log, "Table " << table.first << "." << table.second << " is dropped during sync all schemas");
+        // applyDropTableImpl(table.first, table.second);
+        // LOG_DEBUG(log, "Table " << table.first << "." << table.second << " is dropped during sync all schemas");
     }
     const auto & dbs = context.getDatabases();
     for (auto it = dbs.begin(); it != dbs.end(); it++)
