@@ -1,3 +1,4 @@
+#include <Common/FailPoint.h>
 #include <Common/Stopwatch.h>
 #include <Common/TiFlashMetrics.h>
 #include <Core/Types.h>
@@ -53,11 +54,15 @@ grpc::Status FlashService::Coprocessor(
 ::grpc::Status FlashService::BatchCoprocessor(::grpc::ServerContext * grpc_context, const ::coprocessor::BatchRequest * request,
     ::grpc::ServerWriter<::coprocessor::BatchResponse> * writer)
 {
-    LOG_DEBUG(log, __PRETTY_FUNCTION__ << ": Handling coprocessor request: " << request->DebugString());
+    // Number of batch request is less, so it's ok to use `info` level.
+    LOG_INFO(log, __PRETTY_FUNCTION__ << ": Handling coprocessor request: " << request->DebugString());
 
     GET_METRIC(metrics, tiflash_coprocessor_request_count, type_super_batch).Increment();
     Stopwatch watch;
     SCOPE_EXIT({ GET_METRIC(metrics, tiflash_coprocessor_request_duration_seconds, type_super_batch).Observe(watch.elapsedSeconds()); });
+
+    // sleep for 100s.
+    FAIL_POINT_TRIGGER_TIMEOUT(timeout_during_batch_cop, 100000);
 
     auto [context, status] = createDBContext(grpc_context);
     if (!status.ok())
@@ -70,7 +75,7 @@ grpc::Status FlashService::Coprocessor(
 
     auto ret = cop_handler.execute();
 
-    LOG_DEBUG(log, __PRETTY_FUNCTION__ << ": Handle coprocessor request done: " << ret.error_code() << ", " << ret.error_message());
+    LOG_INFO(log, __PRETTY_FUNCTION__ << ": Handle coprocessor request done: " << ret.error_code() << ", " << ret.error_message());
     return ret;
 }
 
