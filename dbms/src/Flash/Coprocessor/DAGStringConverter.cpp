@@ -1,4 +1,3 @@
-#include <Common/TiFlashException.h>
 #include <Core/QueryProcessingStage.h>
 #include <Flash/Coprocessor/DAGStringConverter.h>
 #include <Flash/Coprocessor/DAGUtils.h>
@@ -30,29 +29,25 @@ void DAGStringConverter::buildTSString(const tipb::TableScan & ts, std::stringst
     else
     {
         // do not have table id
-        throw TiFlashException(
-            "Table id not specified in table scan executor", Errors::Coprocessor::BadRequest);
+        throw Exception("Table id not specified in table scan executor", ErrorCodes::COP_BAD_DAG_REQUEST);
     }
     auto & tmt_ctx = context.getTMTContext();
     auto storage = tmt_ctx.getStorages().get(table_id);
     if (storage == nullptr)
     {
-        throw TiFlashException(
-            "Table " + std::to_string(table_id) + " doesn't exist.", Errors::Coprocessor::BadRequest);
+        throw Exception("Table " + std::to_string(table_id) + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
     }
 
     const auto managed_storage = std::dynamic_pointer_cast<IManageableStorage>(storage);
     if (!managed_storage)
     {
-        throw TiFlashException(
-            "Only Manageable table is supported in DAG request", Errors::Coprocessor::BadRequest);
+        throw Exception("Only Manageable table is supported in DAG request", ErrorCodes::COP_BAD_DAG_REQUEST);
     }
 
     if (ts.columns_size() == 0)
     {
         // no column selected, must be something wrong
-        throw TiFlashException(
-            "No column is selected in table scan executor", Errors::Coprocessor::BadRequest);
+        throw Exception("No column is selected in table scan executor", ErrorCodes::COP_BAD_DAG_REQUEST);
     }
     for (const tipb::ColumnInfo & ci : ts.columns())
     {
@@ -99,7 +94,7 @@ void DAGStringConverter::buildAggString(const tipb::Aggregation & agg, std::stri
     for (auto & agg_func : agg.agg_func())
     {
         if (!agg_func.has_field_type())
-            throw TiFlashException("Agg func without field type", Errors::Coprocessor::BadRequest);
+            throw Exception("Agg func without field type", ErrorCodes::COP_BAD_DAG_REQUEST);
         columns_from_agg.emplace_back(exprToString(agg_func, getCurrentColumns()), getDataTypeByFieldType(agg_func.field_type()));
     }
     if (agg.group_by_size() != 0)
@@ -115,7 +110,7 @@ void DAGStringConverter::buildAggString(const tipb::Aggregation & agg, std::stri
             auto name = exprToString(group_by, getCurrentColumns());
             ss << name;
             if (!group_by.has_field_type())
-                throw TiFlashException("group by expr without field type", Errors::Coprocessor::BadRequest);
+                throw Exception("group by expr without field type", ErrorCodes::COP_BAD_DAG_REQUEST);
             columns_from_agg.emplace_back(name, getDataTypeByFieldType(group_by.field_type()));
         }
     }
@@ -147,7 +142,7 @@ void DAGStringConverter::buildString(const tipb::Executor & executor, std::strin
         case tipb::ExecType::TypeJoin:
         case tipb::ExecType::TypeIndexScan:
             // index scan not supported
-            throw TiFlashException("IndexScan is not supported", Errors::Coprocessor::Unimplemented);
+            throw Exception("IndexScan is not supported", ErrorCodes::NOT_IMPLEMENTED);
         case tipb::ExecType::TypeSelection:
             return buildSelString(executor.selection(), ss);
         case tipb::ExecType::TypeAggregation:
@@ -188,7 +183,7 @@ String DAGStringConverter::buildSqlString()
         auto current_columns = getCurrentColumns();
         std::vector<UInt64> output_index;
         if (afterAgg)
-            for (UInt64 i = 0; i < current_columns.size(); i++)
+            for(UInt64 i = 0; i < current_columns.size(); i++)
                 output_index.push_back(i);
         else
             for (UInt64 index : dag_request.output_offsets())

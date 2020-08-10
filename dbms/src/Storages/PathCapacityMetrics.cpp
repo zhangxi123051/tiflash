@@ -1,4 +1,3 @@
-#include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
 #include <Common/formatReadable.h>
 #include <IO/WriteHelpers.h>
@@ -9,13 +8,6 @@
 
 #include <string>
 #include <vector>
-
-namespace CurrentMetrics
-{
-extern const Metric StoreSizeCapacity;
-extern const Metric StoreSizeAvailable;
-extern const Metric StoreSizeUsed;
-} // namespace CurrentMetrics
 
 namespace DB
 {
@@ -104,10 +96,6 @@ FsStats PathCapacityMetrics::getFsStats() const
                                        << ", used size: " << formatReadableSizeWithBinarySuffix(total_stat.used_size)
                                        << ", capacity size: " << formatReadableSizeWithBinarySuffix(total_stat.capacity_size));
     total_stat.ok = 1;
-
-    CurrentMetrics::set(CurrentMetrics::StoreSizeCapacity, total_stat.capacity_size);
-    CurrentMetrics::set(CurrentMetrics::StoreSizeAvailable, total_stat.avail_size);
-    CurrentMetrics::set(CurrentMetrics::StoreSizeUsed, total_stat.used_size);
 
     return total_stat;
 }

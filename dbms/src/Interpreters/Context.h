@@ -11,7 +11,6 @@
 #include <common/MultiVersion.h>
 #include <Core/Types.h>
 #include <Core/NamesAndTypes.h>
-#include <grpc++/grpc++.h>
 #include <Interpreters/Settings.h>
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/TimezoneInfo.h>
@@ -390,8 +389,7 @@ public:
                           const std::unordered_set<std::string> & ignore_databases,
                           const std::string & kvstore_path,
                           ::TiDB::StorageEngine engine,
-                          bool disable_bg_tasks,
-                          grpc::SslCredentialsOptions cred_options = {});
+                          bool disable_bg_tasks);
 
     void initializeSchemaSyncService();
     SchemaSyncServicePtr & getSchemaSyncService();

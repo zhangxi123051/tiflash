@@ -1,4 +1,3 @@
-#include <Common/TiFlashException.h>
 #include <Storages/Transaction/DatumCodec.h>
 #include <Storages/Transaction/SchemaGetter.h>
 #include <pingcap/kv/Scanner.h>
@@ -70,7 +69,7 @@ struct TxnStructure
     {
         if (key.rfind(metaPrefix, 0) != 0)
         {
-            throw TiFlashException("invalid encoded hash data key prefix.", Errors::Table::SyncError);
+            throw Exception("invalid encoded hash data key prefix.", ErrorCodes::SCHEMA_SYNC_ERROR);
         }
 
 
@@ -81,7 +80,7 @@ struct TxnStructure
         UInt64 tp = DecodeUInt<UInt64>(idx, key);
         if (char(tp) != HashData)
         {
-            throw TiFlashException("invalid encoded hash data key flag:" + std::to_string(tp), Errors::Table::SyncError);
+            throw Exception("invalid encoded hash data key flag:" + std::to_string(tp), ErrorCodes::SCHEMA_SYNC_ERROR);
         }
 
         String field = DecodeBytes(idx, key);
@@ -192,7 +191,7 @@ SchemaDiff SchemaGetter::getSchemaDiff(Int64 ver)
     String data = TxnStructure::Get(snap, key);
     if (data == "")
     {
-        throw TiFlashException("cannot find schema diff for version: " + std::to_string(ver), Errors::Table::SyncError);
+        throw Exception("cannot find schema diff for version: " + std::to_string(ver), ErrorCodes::SCHEMA_SYNC_ERROR);
     }
     SchemaDiff diff;
     diff.deserialize(data);
@@ -255,7 +254,7 @@ std::vector<TiDB::TableInfoPtr> SchemaGetter::listTables(DatabaseID db_id)
     auto db_key = getDBKey(db_id);
     if (!checkDBExists(db_key))
     {
-        throw TiFlashException("DB Not Exists!", Errors::Table::SyncError);
+        throw Exception("DB Not Exists!", ErrorCodes::SCHEMA_SYNC_ERROR);
     }
 
     std::vector<TiDB::TableInfoPtr> res;

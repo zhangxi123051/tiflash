@@ -4,13 +4,6 @@
 #include <Storages/DeltaMerge/Filter/FilterHelper.h>
 #include <Storages/DeltaMerge/Filter/RSOperator.h>
 
-namespace ProfileEvents
-{
-extern const Event DMFileFilterNoFilter;
-extern const Event DMFileFilterAftPKAndPackSet;
-extern const Event DMFileFilterAftRoughSet;
-} // namespace ProfileEvents
-
 namespace DB
 {
 namespace DM
@@ -37,82 +30,47 @@ public:
           filter(filter_),
           read_packs(read_packs_),
           handle_res(dmfile->getPacks(), RSResult::All),
-          use_packs(dmfile->getPacks()),
-          log(&Logger::get("DMFilePackFilter"))
+          use_packs(dmfile->getPacks())
     {
 
-        size_t pack_count = dmfile->getPacks();
         if (!handle_range.all())
         {
             loadIndex(EXTRA_HANDLE_COLUMN_ID);
             auto handle_filter = toFilter(handle_range);
-            for (size_t i = 0; i < pack_count; ++i)
+            for (size_t i = 0; i < dmfile->getPacks(); ++i)
             {
                 handle_res[i] = handle_filter->roughCheck(i, param);
             }
         }
 
-        ProfileEvents::increment(ProfileEvents::DMFileFilterNoFilter, pack_count);
-
-        size_t after_pk         = 0;
-        size_t after_read_packs = 0;
-        size_t after_filter     = 0;
-
-        /// Check packs by handle_res
-        for (size_t i = 0; i < pack_count; ++i)
+        if (filter || read_packs)
         {
-            use_packs[i] = handle_res[i] != None;
-        }
-
-        for (auto u : use_packs)
-            after_pk += u;
-
-        /// Check packs by read_packs
-        if (read_packs)
-        {
-            for (size_t i = 0; i < pack_count; ++i)
+            if (filter)
             {
-                use_packs[i] = ((bool)use_packs[i]) && ((bool)read_packs->count(i));
-            }
-        }
-
-        for (auto u : use_packs)
-            after_read_packs += u;
-        ProfileEvents::increment(ProfileEvents::DMFileFilterAftPKAndPackSet, after_read_packs);
-
-
-        /// Check packs by filter in where clause
-        if (filter)
-        {
-            // Load index based on filter.
-            Attrs attrs = filter->getAttrs();
-            for (auto & attr : attrs)
-            {
-                loadIndex(attr.col_id);
+                // Load index based on filter.
+                Attrs attrs = filter->getAttrs();
+                for (auto & attr : attrs)
+                {
+                    loadIndex(attr.col_id);
+                }
             }
 
-            for (size_t i = 0; i < pack_count; ++i)
+            for (size_t i = 0; i < dmfile->getPacks(); ++i)
             {
-                use_packs[i] = ((bool)use_packs[i]) && (filter->roughCheck(i, param) != None);
+                bool use = handle_res[i] != None;
+                if (filter && use)
+                    use &= filter->roughCheck(i, param) != None;
+                if (read_packs && use)
+                    use &= read_packs->count(i);
+                use_packs[i] = use;
             }
-        }
-
-        for (auto u : use_packs)
-            after_filter += u;
-        ProfileEvents::increment(ProfileEvents::DMFileFilterAftRoughSet, after_filter);
-
-        Float64 filter_rate = (Float64)(after_read_packs - after_filter) * 100 / after_read_packs;
-        if (isnan(filter_rate))
-        {
-            LOG_DEBUG(log,
-                      "RSFilter exclude rate is nan, after_pk: "
-                          << after_pk << ", after_read_packs: " << after_read_packs << ", after_filter: " << after_filter
-                          << ", handle_range: " << handle_range.toString() << ", read_packs: " << ((!read_packs) ? 0 : read_packs->size())
-                          << ", pack_count: " << pack_count);
         }
         else
         {
-            LOG_DEBUG(log, "RSFilter exclude rate: " << DB::toString(filter_rate, 2));
+            for (size_t i = 0; i < dmfile->getPacks(); ++i)
+            {
+                use_packs[i] = handle_res[i] != None;
+            }
         }
     }
 
@@ -194,8 +152,6 @@ private:
 
     std::vector<RSResult> handle_res;
     std::vector<UInt8>    use_packs;
-
-    Logger * log;
 };
 
 } // namespace DM

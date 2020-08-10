@@ -43,8 +43,7 @@ DAGResponseWriter<streaming>::DAGResponseWriter(tipb::SelectResponse * dag_respo
     }
     else
     {
-        throw TiFlashException("Only Default and Arrow encode type is supported in DAGBlockOutputStream.",
-            Errors::Coprocessor::Unimplemented);
+        throw Exception("Only Default and Arrow encode type is supported in DAGBlockOutputStream.", ErrorCodes::UNSUPPORTED_PARAMETER);
     }
     if (dag_response)
         dag_response->set_encode_type(encode_type);
@@ -138,8 +137,7 @@ template <bool streaming>
 void DAGResponseWriter<streaming>::write(const Block & block)
 {
     if (block.columns() != result_field_types.size())
-        throw TiFlashException(
-            "Output column size mismatch with field type size", Errors::Coprocessor::Internal);
+        throw Exception("Output column size mismatch with field type size", ErrorCodes::LOGICAL_ERROR);
     if (records_per_chunk == -1)
     {
         current_records_num = 0;

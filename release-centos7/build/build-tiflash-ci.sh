@@ -19,11 +19,7 @@ set -xe
 install_dir="$SRCPATH/release-centos7/tiflash"
 if [ -d "$install_dir" ]; then rm -rf "$install_dir"/*; else mkdir -p "$install_dir"; fi
 
-pushd ${SRCPATH}/cluster_manage/
-rm -rf ./dist
-./release.sh
-cp -r dist/flash_cluster_manager "$install_dir"/flash_cluster_manager
-popd
+cp -r /flash_cluster_manager "$install_dir"/flash_cluster_manager
 
 if [ -d "$SRCPATH/contrib/kvproto" ]; then
   cd "$SRCPATH/contrib/kvproto"
@@ -42,23 +38,10 @@ fi
 rm -rf ${SRCPATH}/libs/libtiflash-proxy
 mkdir -p ${SRCPATH}/libs/libtiflash-proxy
 
-cd ${SRCPATH}/contrib/tiflash-proxy
-proxy_git_hash=`git log -1 --format="%H"`
-curl -o "${SRCPATH}/libs/libtiflash-proxy/libtiflash_proxy.so" \
-http://fileserver.pingcap.net/download/builds/pingcap/tiflash-proxy/${proxy_git_hash}/libtiflash_proxy.so
-proxy_size=`ls -l "${SRCPATH}/libs/libtiflash-proxy/libtiflash_proxy.so" | awk '{print $5}'`
-min_size=$((102400))
-if [[ ${proxy_size} -lt ${min_size} ]]
-then
-    echo "try to build libtiflash_proxy.so"
-    export PATH=$PATH:$HOME/.cargo/bin
-    make release
-    echo "try to upload libtiflash_proxy.so"
-    cd target/release
-    curl -F builds/pingcap/tiflash-proxy/${proxy_git_hash}/libtiflash_proxy.so=@libtiflash_proxy.so http://fileserver.pingcap.net/upload
-    curl -o "${SRCPATH}/libs/libtiflash-proxy/libtiflash_proxy.so" http://fileserver.pingcap.net/download/builds/pingcap/tiflash-proxy/${proxy_git_hash}/libtiflash_proxy.so
-fi
+# upload: curl -F builds/pingcap/tiflash-proxy/{commit-hash}/libtiflash_proxy.so=@libtiflash_proxy.so http://fileserver.pingcap.net/upload
 
+curl -o "${SRCPATH}/libs/libtiflash-proxy/libtiflash_proxy.so" \
+http://fileserver.pingcap.net/download/builds/pingcap/tiflash-proxy/c90a1226991541ed150a79f8569e6e726a8ec2cb/libtiflash_proxy.so
 chmod 0731 "${SRCPATH}/libs/libtiflash-proxy/libtiflash_proxy.so"
 
 build_dir="$SRCPATH/release-centos7/build-release"

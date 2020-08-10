@@ -1448,13 +1448,12 @@ void Context::createTMTContext(const std::vector<std::string> & pd_addrs,
                                const std::unordered_set<std::string> & ignore_databases,
                                const std::string & kvstore_path,
                                ::TiDB::StorageEngine engine,
-                               bool disable_bg_flush,
-                               grpc::SslCredentialsOptions cred_options)
+                               bool disable_bg_flush)
 {
     auto lock = getLock();
     if (shared->tmt_context)
         throw Exception("TMTContext has already existed", ErrorCodes::LOGICAL_ERROR);
-    shared->tmt_context = std::make_shared<TMTContext>(*this, pd_addrs, learner_key, learner_value, ignore_databases, kvstore_path, engine, disable_bg_flush, cred_options);
+    shared->tmt_context = std::make_shared<TMTContext>(*this, pd_addrs, learner_key, learner_value, ignore_databases, kvstore_path, engine, disable_bg_flush);
 }
 
 void Context::initializePathCapacityMetric(const std::vector<std::string> & all_path, std::vector<size_t> && all_capacity)

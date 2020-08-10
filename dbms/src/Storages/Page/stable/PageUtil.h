@@ -4,7 +4,6 @@
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/StringUtils/StringUtils.h>
-#include <Common/TiFlashException.h>
 #include <IO/WriteHelpers.h>
 #include <common/logger_useful.h>
 
@@ -160,7 +159,7 @@ std::unique_ptr<C> readValuesFromFile(const std::string & path, Allocator<false>
     }
 
     if (unlikely(pos != data + file_size))
-        throw DB::TiFlashException("pos not match", Errors::PageStorage::FileSizeNotMatch);
+        throw DB::Exception("pos not match", ErrorCodes::FILE_SIZE_NOT_MATCH);
 
     return values;
 }

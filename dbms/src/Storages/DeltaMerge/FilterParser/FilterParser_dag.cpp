@@ -1,4 +1,3 @@
-#include <Common/TiFlashException.h>
 #include <Flash/Coprocessor/DAGCodec.h>
 #include <Flash/Coprocessor/DAGQueryInfo.h>
 #include <Flash/Coprocessor/DAGUtils.h>
@@ -76,9 +75,9 @@ ColumnID getColumnIDForColumnExpr(const tipb::Expr & expr, const ColumnDefines &
     auto column_index = decodeDAGInt64(expr.val());
     if (column_index < 0 || column_index >= static_cast<Int64>(columns_to_read.size()))
     {
-        throw TiFlashException("Column index out of bound: " + DB::toString(column_index) + ", should in [0,"
+        throw Exception("Column index out of bound: " + DB::toString(column_index) + ", should in [0,"
                             + DB::toString(columns_to_read.size()) + ")",
-                        Errors::Coprocessor::BadRequest);
+                        ErrorCodes::COP_BAD_DAG_REQUEST);
     }
     return columns_to_read[column_index].id;
 }

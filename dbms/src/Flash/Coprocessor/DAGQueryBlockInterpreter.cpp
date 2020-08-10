@@ -1,6 +1,4 @@
-#include <Common/TiFlashException.h>
 #include <DataStreams/AggregatingBlockInputStream.h>
-#include <DataStreams/ConcatBlockInputStream.h>
 #include <DataStreams/CoprocessorBlockInputStream.h>
 #include <DataStreams/ExpressionBlockInputStream.h>
 #include <DataStreams/FilterBlockInputStream.h>
@@ -306,11 +304,11 @@ void DAGQueryBlockInterpreter::executeTS(const tipb::TableScan & ts, Pipeline & 
     if (!ts.has_table_id())
     {
         // do not have table id
-        throw TiFlashException("Table id not specified in table scan executor", Errors::Coprocessor::BadRequest);
+        throw Exception("Table id not specified in table scan executor", ErrorCodes::COP_BAD_DAG_REQUEST);
     }
     if (dag.getRegions().empty())
     {
-        throw TiFlashException("Dag Request does not have region to read. ", Errors::Coprocessor::BadRequest);
+        throw Exception("Dag Request does not have region to read. ", ErrorCodes::COP_BAD_DAG_REQUEST);
     }
 
     TableID table_id = ts.table_id();
@@ -361,7 +359,7 @@ void DAGQueryBlockInterpreter::executeTS(const tipb::TableScan & ts, Pipeline & 
             catch (const RegionException & e)
             {
                 if (tmt.getTerminated())
-                    throw TiFlashException("TiFlash server is terminating", Errors::Coprocessor::Internal);
+                    throw Exception("TiFlash server is terminating", ErrorCodes::LOGICAL_ERROR);
                 // By now, RegionException will contain all region id of MvccQueryInfo, which is needed by CHSpark.
                 // When meeting RegionException, we can let MakeRegionQueryInfos to check in next loop.
             }
@@ -379,7 +377,7 @@ void DAGQueryBlockInterpreter::executeTS(const tipb::TableScan & ts, Pipeline & 
         storage = context.getTMTContext().getStorages().get(table_id);
         if (storage == nullptr)
         {
-            throw TiFlashException("Table " + std::to_string(table_id) + " doesn't exist.", Errors::Table::NotExists);
+            throw Exception("Table " + std::to_string(table_id) + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
         }
         table_lock = storage->lockStructure(false, __PRETTY_FUNCTION__);
     }
@@ -428,7 +426,7 @@ void DAGQueryBlockInterpreter::executeTS(const tipb::TableScan & ts, Pipeline & 
                 if ((size_t)i >= required_columns.size())
                 {
                     // array index out of bound
-                    throw TiFlashException("Output offset index is out of bound", Errors::Coprocessor::BadRequest);
+                    throw Exception("Output offset index is out of bound", ErrorCodes::COP_BAD_DAG_REQUEST);
                 }
                 // do not have alias
                 final_project.emplace_back(required_columns[i], "");
@@ -445,10 +443,10 @@ void DAGQueryBlockInterpreter::executeTS(const tipb::TableScan & ts, Pipeline & 
     // todo handle alias column
     if (settings.max_columns_to_read && required_columns.size() > settings.max_columns_to_read)
     {
-        throw TiFlashException("Limit for number of columns to read exceeded. "
-                               "Requested: "
+        throw Exception("Limit for number of columns to read exceeded. "
+                        "Requested: "
                 + toString(required_columns.size()) + ", maximum: " + settings.max_columns_to_read.toString(),
-            Errors::BroadcastJoin::TooManyColumns);
+            ErrorCodes::TOO_MANY_COLUMNS);
     }
 
     size_t max_block_size = settings.max_block_size;
@@ -602,15 +600,15 @@ void DAGQueryBlockInterpreter::executeTS(const tipb::TableScan & ts, Pipeline & 
     }
 }
 
-void DAGQueryBlockInterpreter::prepareJoinKeys(const google::protobuf::RepeatedPtrField<tipb::Expr> & keys, const DataTypes & key_types,
-    Pipeline & pipeline, Names & key_names, bool left, bool is_right_out_join)
+void DAGQueryBlockInterpreter::prepareJoinKeys(
+    const tipb::Join & join, const DataTypes & key_types, Pipeline & pipeline, Names & key_names, bool tiflash_left)
 {
     std::vector<NameAndTypePair> source_columns;
     for (auto const & p : pipeline.firstStream()->getHeader().getNamesAndTypesList())
         source_columns.emplace_back(p.name, p.type);
     DAGExpressionAnalyzer dag_analyzer(std::move(source_columns), context);
     ExpressionActionsChain chain;
-    if (dag_analyzer.appendJoinKey(chain, keys, key_types, key_names, left, is_right_out_join))
+    if (dag_analyzer.appendJoinKey(chain, join, key_types, key_names, tiflash_left))
     {
         pipeline.transform([&](auto & stream) { stream = std::make_shared<ExpressionBlockInputStream>(stream, chain.getLastActions()); });
     }
@@ -625,7 +623,7 @@ void getJoinKeyTypes(const tipb::Join & join, DataTypes & key_types)
     for (int i = 0; i < join.left_join_keys().size(); i++)
     {
         if (!exprHasValidFieldType(join.left_join_keys(i)) || !exprHasValidFieldType(join.right_join_keys(i)))
-            throw TiFlashException("Join key without field type", Errors::Coprocessor::BadRequest);
+            throw Exception("Join key without field type", ErrorCodes::COP_BAD_DAG_REQUEST);
         DataTypes types;
         types.emplace_back(getDataTypeByFieldType(join.left_join_keys(i).field_type()));
         types.emplace_back(getDataTypeByFieldType(join.right_join_keys(i).field_type()));
@@ -669,12 +667,12 @@ void DAGQueryBlockInterpreter::executeJoin(const tipb::Join & join, Pipeline & p
         {tipb::JoinType::TypeRightOuterJoin, ASTTableJoin::Kind::Right}};
     if (input_streams_vec.size() != 2)
     {
-        throw TiFlashException("Join query block must have 2 input streams", Errors::BroadcastJoin::Internal);
+        throw Exception("Join query block must have 2 input streams", ErrorCodes::LOGICAL_ERROR);
     }
 
     auto join_type_it = join_type_map.find(join.join_type());
     if (join_type_it == join_type_map.end())
-        throw TiFlashException("Unknown join type in dag request", Errors::Coprocessor::BadRequest);
+        throw Exception("Unknown join type in dag request", ErrorCodes::COP_BAD_DAG_REQUEST);
     ASTTableJoin::Kind kind = join_type_it->second;
 
     BlockInputStreams left_streams;
@@ -698,9 +696,10 @@ void DAGQueryBlockInterpreter::executeJoin(const tipb::Join & join, Pipeline & p
         right_streams = input_streams_vec[1];
     }
 
-    if (kind == ASTTableJoin::Kind::Full)
+    if (kind != ASTTableJoin::Kind::Inner)
     {
-        throw TiFlashException("Only Inner/Left/Right join is supported", Errors::Coprocessor::Unimplemented);
+        // todo support left and right join
+        throw Exception("Only Inner join is supported", ErrorCodes::NOT_IMPLEMENTED);
     }
 
     std::vector<NameAndTypePair> join_output_columns;
@@ -737,7 +736,7 @@ void DAGQueryBlockInterpreter::executeJoin(const tipb::Join & join, Pipeline & p
             if (removeNullable(join_key_types[i])->isString())
             {
                 if (join.probe_types(i).collate() != join.build_types(i).collate())
-                    throw TiFlashException("Join with different collators on the join key", Errors::Coprocessor::BadRequest);
+                    throw Exception("Join with different collators on the join key", ErrorCodes::COP_BAD_DAG_REQUEST);
                 collators.push_back(getCollatorFromFieldType(join.probe_types(i)));
             }
             else
@@ -747,12 +746,10 @@ void DAGQueryBlockInterpreter::executeJoin(const tipb::Join & join, Pipeline & p
     /// add necessary transformation if the join key is an expression
     Pipeline left_pipeline;
     left_pipeline.streams = left_streams;
-    prepareJoinKeys(join.inner_idx() == 0 ? join.right_join_keys() : join.left_join_keys(), join_key_types, left_pipeline, left_key_names,
-        true, kind == ASTTableJoin::Kind::Right);
+    prepareJoinKeys(join, join_key_types, left_pipeline, left_key_names, true);
     Pipeline right_pipeline;
     right_pipeline.streams = right_streams;
-    prepareJoinKeys(join.inner_idx() == 0 ? join.left_join_keys() : join.right_join_keys(), join_key_types, right_pipeline, right_key_names,
-        false, kind == ASTTableJoin::Kind::Right);
+    prepareJoinKeys(join, join_key_types, right_pipeline, right_key_names, false);
 
     left_streams = left_pipeline.streams;
     right_streams = right_pipeline.streams;
@@ -761,7 +758,7 @@ void DAGQueryBlockInterpreter::executeJoin(const tipb::Join & join, Pipeline & p
     JoinPtr joinPtr = std::make_shared<Join>(left_key_names, right_key_names, true,
         SizeLimits(settings.max_rows_in_join, settings.max_bytes_in_join, settings.join_overflow_mode), kind, ASTTableJoin::Strictness::All,
         collators);
-    executeUnion(right_pipeline, max_streams);
+    executeUnion(right_pipeline);
     right_query.source = right_pipeline.firstStream();
     right_query.join = joinPtr;
     right_query.join->setSampleBlock(right_query.source->getHeader());
@@ -775,9 +772,6 @@ void DAGQueryBlockInterpreter::executeJoin(const tipb::Join & join, Pipeline & p
     dag_analyzer.appendJoin(chain, right_query, columns_added_by_join);
     pipeline.streams = left_streams;
     /// add join input stream
-    if (kind == ASTTableJoin::Kind::Full || kind == ASTTableJoin::Kind::Right)
-        pipeline.stream_with_non_joined_data = chain.getLastActions()->createStreamWithNonJoinedDataIfFullOrRightJoin(
-            pipeline.firstStream()->getHeader(), settings.max_block_size);
     for (auto & stream : pipeline.streams)
         stream = std::make_shared<ExpressionBlockInputStream>(stream, chain.getLastActions());
 
@@ -921,26 +915,15 @@ void DAGQueryBlockInterpreter::executeAggregation(Pipeline & pipeline, const Exp
     /// If there are several sources, then we perform parallel aggregation
     if (pipeline.streams.size() > 1)
     {
-        pipeline.firstStream() = std::make_shared<ParallelAggregatingBlockInputStream>(pipeline.streams,
-            pipeline.stream_with_non_joined_data, params, true, max_streams,
+        pipeline.firstStream() = std::make_shared<ParallelAggregatingBlockInputStream>(pipeline.streams, nullptr, params, true, max_streams,
             settings.aggregation_memory_efficient_merge_threads ? static_cast<size_t>(settings.aggregation_memory_efficient_merge_threads)
                                                                 : static_cast<size_t>(settings.max_threads));
 
-        pipeline.stream_with_non_joined_data = nullptr;
         pipeline.streams.resize(1);
     }
     else
     {
-        BlockInputStreams inputs;
-        if (!pipeline.streams.empty())
-            inputs.push_back(pipeline.firstStream());
-        else
-            pipeline.streams.resize(1);
-        if (pipeline.stream_with_non_joined_data)
-            inputs.push_back(pipeline.stream_with_non_joined_data);
-        pipeline.firstStream()
-            = std::make_shared<AggregatingBlockInputStream>(std::make_shared<ConcatBlockInputStream>(inputs), params, true);
-        pipeline.stream_with_non_joined_data = nullptr;
+        pipeline.firstStream() = std::make_shared<AggregatingBlockInputStream>(pipeline.firstStream(), params, true);
     }
     // add cast
 }
@@ -966,16 +949,16 @@ void DAGQueryBlockInterpreter::getAndLockStorageWithSchemaVersion(TableID table_
         if (!storage_)
         {
             if (schema_synced)
-                throw TiFlashException("Table " + std::to_string(table_id) + " doesn't exist.", Errors::Table::NotExists);
+                throw Exception("Table " + std::to_string(table_id) + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
             else
                 return std::make_tuple(nullptr, nullptr, DEFAULT_UNSPECIFIED_SCHEMA_VERSION, false);
         }
 
         if (storage_->engineType() != ::TiDB::StorageEngine::TMT && storage_->engineType() != ::TiDB::StorageEngine::DT)
         {
-            throw TiFlashException("Specifying schema_version for non-managed storage: " + storage_->getName()
+            throw Exception("Specifying schema_version for non-managed storage: " + storage_->getName()
                     + ", table: " + storage_->getTableName() + ", id: " + DB::toString(table_id) + " is not allowed",
-                Errors::Coprocessor::Internal);
+                ErrorCodes::LOGICAL_ERROR);
         }
 
         /// Lock storage.
@@ -990,9 +973,9 @@ void DAGQueryBlockInterpreter::getAndLockStorageWithSchemaVersion(TableID table_
         auto storage_schema_version = storage_->getTableInfo().schema_version;
         // Not allow storage > query in any case, one example is time travel queries.
         if (storage_schema_version > query_schema_version)
-            throw TiFlashException("Table " + std::to_string(table_id) + " schema version " + std::to_string(storage_schema_version)
+            throw Exception("Table " + std::to_string(table_id) + " schema version " + std::to_string(storage_schema_version)
                     + " newer than query schema version " + std::to_string(query_schema_version),
-                Errors::Table::SchemaVersionError);
+                ErrorCodes::SCHEMA_VERSION_ERROR);
         // From now on we have storage <= query.
         // If schema was synced, it implies that global >= query, as mentioned above we have storage <= query, we are OK to serve.
         if (schema_synced)
@@ -1046,7 +1029,7 @@ void DAGQueryBlockInterpreter::getAndLockStorageWithSchemaVersion(TableID table_
             return;
         }
 
-        throw TiFlashException("Shouldn't reach here", Errors::Coprocessor::Internal);
+        throw Exception("Shouldn't reach here", ErrorCodes::UNKNOWN_EXCEPTION);
     }
 }
 
@@ -1071,19 +1054,12 @@ SortDescription DAGQueryBlockInterpreter::getSortDescription(std::vector<NameAnd
     return order_descr;
 }
 
-void DAGQueryBlockInterpreter::executeUnion(Pipeline & pipeline, size_t max_streams)
+void DAGQueryBlockInterpreter::executeUnion(Pipeline & pipeline)
 {
     if (pipeline.hasMoreThanOneStream())
     {
-        pipeline.firstStream()
-            = std::make_shared<UnionBlockInputStream<>>(pipeline.streams, pipeline.stream_with_non_joined_data, max_streams);
-        pipeline.stream_with_non_joined_data = nullptr;
+        pipeline.firstStream() = std::make_shared<UnionBlockInputStream<>>(pipeline.streams, nullptr, max_streams);
         pipeline.streams.resize(1);
-    }
-    else if (pipeline.stream_with_non_joined_data)
-    {
-        pipeline.streams.push_back(pipeline.stream_with_non_joined_data);
-        pipeline.stream_with_non_joined_data = nullptr;
     }
 }
 
@@ -1106,7 +1082,7 @@ void DAGQueryBlockInterpreter::executeOrder(Pipeline & pipeline, std::vector<Nam
     });
 
     /// If there are several streams, we merge them into one
-    executeUnion(pipeline, max_streams);
+    executeUnion(pipeline);
 
     /// Merge the sorted blocks.
     pipeline.firstStream() = std::make_shared<MergeSortingBlockInputStream>(pipeline.firstStream(), order_descr, settings.max_block_size,
@@ -1120,8 +1096,6 @@ void DAGQueryBlockInterpreter::recordProfileStreams(Pipeline & pipeline, const S
     {
         dag.getDAGContext().getProfileStreamsMap()[key].input_streams.push_back(stream);
     }
-    if (pipeline.stream_with_non_joined_data)
-        dag.getDAGContext().profile_streams_map[key].input_streams.push_back(pipeline.stream_with_non_joined_data);
 }
 
 void copyExecutorTreeWithLocalTableScan(
@@ -1189,13 +1163,13 @@ void copyExecutorTreeWithLocalTableScan(
         }
         else
         {
-            throw TiFlashException("Not supported yet", Errors::Coprocessor::Unimplemented);
+            throw Exception("Not supported yet");
         }
         exec_id++;
     }
 
     if (current->tp() != tipb::ExecType::TypeTableScan)
-        throw TiFlashException("Only support copy from table scan sourced query block", Errors::Coprocessor::Internal);
+        throw Exception("Only support copy from table scan sourced query block");
     exec->set_tp(tipb::ExecType::TypeTableScan);
     exec->set_executor_id("tablescan_" + std::to_string(exec_id));
     auto * new_ts = new tipb::TableScan(current->tbl_scan());
@@ -1215,7 +1189,7 @@ void DAGQueryBlockInterpreter::executeRemoteQuery(Pipeline & pipeline)
     // in parellel, but current remote query is running in
     // parellel, so just disable this corner case.
     if (query_block.aggregation || query_block.limitOrTopN)
-        throw TiFlashException("Remote query containing agg or limit or topN is not supported", Errors::Coprocessor::BadRequest);
+        throw Exception("Remote query containing agg or limit or topN is not supported", ErrorCodes::COP_BAD_DAG_REQUEST);
     const auto & ts = query_block.source->tbl_scan();
     std::vector<std::pair<DecodedTiKVKey, DecodedTiKVKey>> key_ranges;
     for (auto & range : ts.ranges())
@@ -1333,6 +1307,8 @@ void DAGQueryBlockInterpreter::executeImpl(Pipeline & pipeline)
     if (query_block.source->tp() == tipb::ExecType::TypeJoin)
     {
         executeJoin(query_block.source->join(), pipeline, right_query);
+        // todo the join execution time is not accurate because only probe time is
+        //  recorded here
         recordProfileStreams(pipeline, query_block.source_name);
     }
     else
@@ -1410,7 +1386,7 @@ void DAGQueryBlockInterpreter::executeLimit(Pipeline & pipeline)
     pipeline.transform([&](auto & stream) { stream = std::make_shared<LimitBlockInputStream>(stream, limit, 0, false); });
     if (pipeline.hasMoreThanOneStream())
     {
-        executeUnion(pipeline, max_streams);
+        executeUnion(pipeline);
         pipeline.transform([&](auto & stream) { stream = std::make_shared<LimitBlockInputStream>(stream, limit, 0, false); });
     }
 }
@@ -1419,9 +1395,6 @@ BlockInputStreams DAGQueryBlockInterpreter::execute()
 {
     Pipeline pipeline;
     executeImpl(pipeline);
-    if (pipeline.stream_with_non_joined_data)
-        // todo return pipeline instead of BlockInputStreams so we can keep concurrent execution
-        executeUnion(pipeline, max_streams);
 
     return pipeline.streams;
 }

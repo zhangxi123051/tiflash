@@ -63,7 +63,6 @@
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/TiFlashBuildInfo.h>
-#include <Common/UnifiedLogPatternFormatter.h>
 #include <daemon/OwnPatternFormatter.h>
 
 
@@ -730,7 +729,7 @@ void BaseDaemon::buildLoggers(Poco::Util::AbstractConfiguration & config)
         std::cerr << "Logging " << log_level << " to " << log_path << std::endl;
 
         // Set up two channel chains.
-        Poco::AutoPtr<DB::UnifiedLogPatternFormatter> pf = new DB::UnifiedLogPatternFormatter();
+        Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter(this);
         pf->setProperty("times", "local");
         Poco::AutoPtr<FormattingChannel> log = new FormattingChannel(pf);
         log_file = new FileChannel;

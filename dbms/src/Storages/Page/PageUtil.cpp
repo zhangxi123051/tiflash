@@ -1,51 +1,25 @@
+#include <boost/algorithm/string/classification.hpp>
+
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/StringUtils/StringUtils.h>
-#include <Common/TiFlashException.h>
 
 #include <IO/WriteHelpers.h>
-
-#include <boost/algorithm/string/classification.hpp>
 
 #ifndef __APPLE__
 #include <fcntl.h>
 #endif
 
-#include <Storages/Page/PageUtil.h>
-
 #include <ext/scope_guard.h>
 
-namespace ProfileEvents
-{
-extern const Event FileOpen;
-extern const Event FileOpenFailed;
-extern const Event FileFSync;
-extern const Event Seek;
-extern const Event PSMWritePages;
-extern const Event PSMWriteCalls;
-extern const Event PSMWriteIOCalls;
-extern const Event PSMWriteBytes;
-extern const Event PSMReadPages;
-extern const Event PSMReadCalls;
-extern const Event PSMReadIOCalls;
-extern const Event PSMReadBytes;
-extern const Event PSMWriteFailed;
-extern const Event PSMReadFailed;
-} // namespace ProfileEvents
-
-namespace CurrentMetrics
-{
-extern const Metric Write;
-extern const Metric Read;
-} // namespace CurrentMetrics
+#include <Storages/Page/PageUtil.h>
 
 namespace DB::PageUtil
 {
 
 void syncFile(int fd, const std::string & path)
 {
-    ProfileEvents::increment(ProfileEvents::FileFSync);
     if (-1 == ::fsync(fd))
         DB::throwFromErrno("Cannot fsync " + path, ErrorCodes::CANNOT_FSYNC);
 }
@@ -109,7 +83,7 @@ void readFile(int fd, const off_t offset, const char * buf, size_t expected_byte
     ProfileEvents::increment(ProfileEvents::PSMReadBytes, bytes_read);
 
     if (unlikely(bytes_read != expected_bytes))
-        throw DB::TiFlashException("Not enough data in file " + path, Errors::PageStorage::FileSizeNotMatch);
+        throw DB::Exception("Not enough data in file " + path, ErrorCodes::FILE_SIZE_NOT_MATCH);
 }
 
 } // namespace DB::PageUtil

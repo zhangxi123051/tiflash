@@ -5,7 +5,6 @@
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/StringUtils/StringUtils.h>
-#include <Common/TiFlashException.h>
 #include <Common/randomSeed.h>
 #include <common/logger_useful.h>
 
@@ -177,7 +176,7 @@ void readFile(int fd, const off_t offset, const char * buf, size_t expected_byte
     ProfileEvents::increment(ProfileEvents::PSMReadBytes, bytes_read);
 
     if (unlikely(bytes_read != expected_bytes))
-        throw DB::TiFlashException("Not enough data in file " + path, Errors::PageStorage::FileSizeNotMatch);
+        throw Exception("Not enough data in file " + path, ErrorCodes::FILE_SIZE_NOT_MATCH);
 }
 
 /// Write and advance sizeof(T) bytes.
@@ -224,7 +223,7 @@ std::unique_ptr<C> readValuesFromFile(const std::string & path, Allocator<false>
     }
 
     if (unlikely(pos != data + file_size))
-        throw DB::TiFlashException("pos not match", Errors::PageStorage::FileSizeNotMatch);
+        throw Exception("pos not match", ErrorCodes::FILE_SIZE_NOT_MATCH);
 
     return values;
 }

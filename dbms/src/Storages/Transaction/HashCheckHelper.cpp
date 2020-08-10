@@ -1,7 +1,6 @@
 #include <fcntl.h>
 
 #include <Storages/Transaction/HashCheckHelper.h>
-#include <Common/TiFlashException.h>
 
 namespace DB
 {
@@ -54,7 +53,8 @@ void checkObjectHashInFile(const std::string & path, const std::vector<size_t> &
         max_size = std::max(max_size, b);
     }
     if (total_size != file_size)
-            throw DB::TiFlashException("File size not match! Expected: " + DB::toString(total_size) + ", got: " + DB::toString(file_size), Errors::PageStorage::FileSizeNotMatch);
+        throw Exception("File size not match! Expected: " + DB::toString(total_size) + ", got: " + DB::toString(file_size),
+            ErrorCodes::FILE_SIZE_NOT_MATCH);
 
     char * object_data_buf = (char *)malloc(max_size);
     SCOPE_EXIT({ free(object_data_buf); });

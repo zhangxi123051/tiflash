@@ -38,6 +38,15 @@ InterpreterDAG::InterpreterDAG(Context & context_, const DAGQuerySource & dag_)
     }
 }
 
+void InterpreterDAG::executeUnion(Pipeline & pipeline)
+{
+    if (pipeline.hasMoreThanOneStream())
+    {
+        pipeline.firstStream() = std::make_shared<UnionBlockInputStream<>>(pipeline.streams, nullptr, max_streams);
+        pipeline.streams.resize(1);
+    }
+}
+
 BlockInputStreams InterpreterDAG::executeQueryBlock(DAGQueryBlock & query_block, std::vector<SubqueriesForSets> & subqueriesForSets)
 {
     if (!query_block.children.empty())
@@ -80,7 +89,7 @@ BlockIO InterpreterDAG::execute()
                 dag.getEncodeType(), dag.getResultFieldTypes(), stream->getHeader(), dag.getDAGContext(), collect_exec_summary,
                 dag.getDAGRequest().has_root_executor());
     }
-    DAGQueryBlockInterpreter::executeUnion(pipeline, max_streams);
+    executeUnion(pipeline);
     if (!subqueriesForSets.empty())
     {
         const Settings & settings = context.getSettingsRef();

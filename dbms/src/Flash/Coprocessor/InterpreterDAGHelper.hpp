@@ -1,7 +1,5 @@
 #pragma once
 
-#include <Common/TiFlashException.h>
-
 namespace DB
 {
 
@@ -37,7 +35,7 @@ MakeRegionQueryInfos(const std::unordered_map<RegionID, RegionInfo> & dag_region
     {
         if (r.key_ranges.empty())
         {
-            throw TiFlashException("Income key ranges is empty for region: " + std::to_string(r.region_id), Errors::Coprocessor::BadRequest);
+            throw Exception("Income key ranges is empty for region: " + std::to_string(r.region_id), ErrorCodes::COP_BAD_DAG_REQUEST);
         }
         if (region_force_retry.count(id))
         {
@@ -64,8 +62,8 @@ MakeRegionQueryInfos(const std::unordered_map<RegionID, RegionInfo> & dag_region
                 TiKVRange::Handle end = TiKVRange::getRangeHandle<false>(p.second, table_id);
                 auto range = std::make_pair(start, end);
                 if (range.first < info.range_in_table.first || range.second > info.range_in_table.second)
-                    throw TiFlashException(
-                        "Income key ranges is illegal for region: " + std::to_string(r.region_id), Errors::Coprocessor::BadRequest);
+                    throw Exception(
+                        "Income key ranges is illegal for region: " + std::to_string(r.region_id), ErrorCodes::COP_BAD_DAG_REQUEST);
 
                 info.required_handle_ranges.emplace_back(range);
             }

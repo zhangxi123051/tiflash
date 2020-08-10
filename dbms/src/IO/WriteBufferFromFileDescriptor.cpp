@@ -11,10 +11,9 @@
 
 namespace ProfileEvents
 {
-extern const Event FileFSync;
-extern const Event WriteBufferFromFileDescriptorWrite;
-extern const Event WriteBufferFromFileDescriptorWriteFailed;
-extern const Event WriteBufferFromFileDescriptorWriteBytes;
+    extern const Event WriteBufferFromFileDescriptorWrite;
+    extern const Event WriteBufferFromFileDescriptorWriteFailed;
+    extern const Event WriteBufferFromFileDescriptorWriteBytes;
 }
 
 namespace CurrentMetrics
@@ -105,7 +104,6 @@ void WriteBufferFromFileDescriptor::sync()
     next();
 
     /// Request OS to sync data with storage medium.
-    ProfileEvents::increment(ProfileEvents::FileFSync);
     int res = fsync(fd);
     if (-1 == res)
         throwFromErrno("Cannot fsync " + getFileName(), ErrorCodes::CANNOT_FSYNC);

@@ -73,16 +73,16 @@ void Region::doRemove(ColumnFamilyType type, const TiKVKey & key)
 
     switch (type)
     {
-        case ColumnFamilyType::Lock:
+        case Lock:
             data.removeLockCF(raw_key);
             break;
-        case ColumnFamilyType::Default:
+        case Default:
         {
             // there may be some prewrite data, may not exist, don't throw exception.
             data.removeDefaultCF(key, raw_key);
             break;
         }
-        case ColumnFamilyType::Write:
+        case Write:
         {
             // removed by gc, may not exist.
             data.removeWriteCF(key, raw_key);
@@ -557,7 +557,7 @@ void Region::compareAndCompleteSnapshot(HandleMap & handle_map, const Timestamp 
         TiKVKey commit_key = RecordKVFormat::appendTs(key, ori_ts);
         TiKVValue value = RecordKVFormat::encodeWriteCfValue(DelFlag, 0);
 
-        data.insert(ColumnFamilyType::Write, std::move(commit_key), raw_key, std::move(value));
+        data.insert(Write, std::move(commit_key), raw_key, std::move(value));
         ++deleted_gc_cnt;
     }
 
@@ -623,8 +623,7 @@ TiFlashApplyRes Region::handleWriteRaftCmd(const WriteCmdsView & cmds, UInt64 in
             }
             default:
                 throw Exception(
-                    std::string(__PRETTY_FUNCTION__) + ": unsupported command type " + std::to_string(static_cast<uint8_t>(type)),
-                    ErrorCodes::LOGICAL_ERROR);
+                    std::string(__PRETTY_FUNCTION__) + ": unsupported command type " + std::to_string(type), ErrorCodes::LOGICAL_ERROR);
         }
     };
 
