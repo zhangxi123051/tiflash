@@ -33,6 +33,11 @@ struct RpcTypeTraits<::mpp::EstablishMPPConnectionRequest>
     {
         return client->stub->EstablishMPPConnection(context, req);
     }
+    static std::unique_ptr<::grpc::ClientAsyncReader<::mpp::MPPDataPacket> > doAsyncRPCCall(
+            grpc::ClientContext * context, std::shared_ptr<KvConnClient> client, const RequestType & req, grpc::CompletionQueue& cq, void* call)
+    {
+        return client->stub->AsyncEstablishMPPConnection(context, req, &cq, call);
+    }
 };
 
 } // namespace kv
@@ -52,6 +57,8 @@ class ExchangeReceiverInputStream : public IProfilingBlockInputStream
     tipb::ExchangeReceiver exchange_receiver;
     ::mpp::TaskMeta task_meta;
     std::vector<std::thread> workers;
+    // async grpc
+    grpc::CompletionQueue grpc_com_queue;
 
     DAGSchema fake_schema;
     Block sample_block;
@@ -99,9 +106,9 @@ class ExchangeReceiverInputStream : public IProfilingBlockInputStream
         }
     }
 
-    // Check this error is retryable
+#if SYNC
+        // Check this error is retryable
     bool canRetry(const mpp::Error & err) { return err.msg().find("can't find") != std::string::npos; }
-
     void startAndRead(const String & raw)
     {
         try
@@ -184,7 +191,76 @@ class ExchangeReceiverInputStream : public IProfilingBlockInputStream
         throw Exception(
             "cannot build connection after several tries, total wait time is " + std::to_string(total_wait_time.count()) + "s.");
     }
+#else
+    struct ExchangeCall
+    {
+        using RequestType = ::mpp::EstablishMPPConnectionRequest;
+        using ResultType = ::mpp::MPPDataPacket;
+        grpc::ClientContext client_context;
+        std::shared_ptr<RequestType> req;
+        mpp::MPPDataPacket packet;
+        std::unique_ptr<::grpc::ClientAsyncReader<::mpp::MPPDataPacket> > reader;
+        enum StateType {CONNECTED,TOREAD,DONE};
+        StateType state_type;
+        ExchangeCall(TMTContext& tmtContext, std::string meta_str, ::mpp::TaskMeta & task_meta, grpc::CompletionQueue& cq) {
+            auto sender_task = new mpp::TaskMeta();
+            sender_task->ParseFromString(meta_str);
+            req = std::make_shared<mpp::EstablishMPPConnectionRequest>();
+            req->set_allocated_receiver_meta(new mpp::TaskMeta(task_meta));
+            req->set_allocated_sender_meta(sender_task);
+            pingcap::kv::RpcCall<mpp::EstablishMPPConnectionRequest> call(req);
+            reader = tmtContext.getCluster()->rpc_client->sendStreamRequestAsync(req->sender_meta().address(), &client_context, call, cq, (void*)this);
+            state_type = CONNECTED;
+        }
 
+    };
+    std::vector<std::unique_ptr<ExchangeCall> >exchangeCalls;
+    void sendAsyncReq()
+    {
+        for(auto & meta : exchange_receiver.encoded_task_meta()) {
+            live_workers++;
+            exchangeCalls.emplace_back(new ExchangeCall(context, meta, task_meta, grpc_com_queue));
+            LOG_DEBUG(log, "begin start and read : " << exchangeCalls.back()->req->DebugString());
+        }
+    }
+    void proceedAsyncReq()
+    {
+        void* got_tag;
+        bool ok = false;
+
+        // Block until the next result is available in the completion queue "cq".
+        while (grpc_com_queue.Next(&got_tag, &ok) && live_workers > 0) {
+            ExchangeCall* call = static_cast<ExchangeCall*>(got_tag);
+            if (!ok) {
+                call->state_type = ExchangeCall::DONE;
+            }
+            switch (call->state_type) {
+                case ExchangeCall::StateType::CONNECTED:{
+                    call->reader->Read(&call->packet,(void*)call);
+                    call->state_type = ExchangeCall::StateType::TOREAD;
+                } break;
+                case ExchangeCall::StateType::TOREAD:{
+                    // the last read() asynchronously succeed!
+                    if (call->packet.has_error()) // This is the only way that down stream pass an error.
+                    {
+                        throw Exception("exchange receiver meet error : " + call->packet.error().msg());
+                    }
+                    LOG_DEBUG(log, "read success");
+                    decodePacket(call->packet);
+                    // issue a new read request
+                    call->reader->Read(&call->packet,(void*)call);
+                }break;
+                case ExchangeCall::StateType::DONE: {
+                    live_workers--;
+                    delete call;
+                }break;
+                default: {
+                    throw Exception("exchange receiver meet unknown msg");
+                }
+            }
+        }
+    }
+#endif
 public:
     ExchangeReceiverInputStream(Context & context_, const ::tipb::ExchangeReceiver & exc, const ::mpp::TaskMeta & meta)
         : context(context_.getTMTContext()),
@@ -219,6 +295,7 @@ public:
         {
             worker.join();
         }
+        grpc_com_queue.Shutdown();
     }
 
     Block getHeader() const override { return sample_block; }
@@ -227,6 +304,7 @@ public:
 
     void init()
     {
+#if SYNC
         int task_size = exchange_receiver.encoded_task_meta_size();
         for (int i = 0; i < task_size; i++)
         {
@@ -234,6 +312,10 @@ public:
             std::thread t(&ExchangeReceiverInputStream::startAndRead, this, std::ref(exchange_receiver.encoded_task_meta(i)));
             workers.push_back(std::move(t));
         }
+#else
+        sendAsyncReq();
+        workers.emplace_back(std::thread(&ExchangeReceiverInputStream::proceedAsyncReq, this));
+#endif
         inited = true;
     }
 
