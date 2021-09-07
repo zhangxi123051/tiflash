@@ -126,7 +126,7 @@ static String buildInFunction(DAGExpressionAnalyzer * analyzer, const tipb::Expr
     argument_types.push_back(sample_block.getByName(key_name).type);
     for (int i = 1; i < expr.children_size(); ++i)
     {
-        auto & child = expr.children(i);
+        const auto & child = expr.children(i);
         if (!isLiteralExpr(child))
         {
             // Non-literal expression will be rewritten with `OR`, for example:
@@ -184,7 +184,7 @@ static String buildLogicalFunction(DAGExpressionAnalyzer * analyzer, const tipb:
 {
     const String & func_name = getFunctionName(expr);
     Names argument_names;
-    for (auto & child : expr.children())
+    for (const auto & child : expr.children())
     {
         String name = analyzer->getActions(child, actions, true);
         argument_names.push_back(name);
@@ -230,7 +230,7 @@ static String buildTupleFunctionForGroupConcat(
     int child_size = expr.children_size() - 1;
     for (auto i = 0; i < child_size; ++i)
     {
-        auto & child = expr.children(i);
+        const auto & child = expr.children(i);
         String name = analyzer->getActions(child, actions, false);
         argument_names.push_back(name);
         auto type = actions->getSampleBlock().getByName(name).type;
@@ -388,7 +388,7 @@ static String buildBitwiseFunction(DAGExpressionAnalyzer * analyzer, const tipb:
     // See https://github.com/pingcap/tics/issues/1756
     DataTypePtr uint64_type = std::make_shared<DataTypeUInt64>();
     const Block & sample_block = actions->getSampleBlock();
-    for (auto & child : expr.children())
+    for (const auto & child : expr.children())
     {
         String name = analyzer->getActions(child, actions);
         DataTypePtr orig_type = sample_block.getByName(name).type;
@@ -435,7 +435,7 @@ static String buildFunction(DAGExpressionAnalyzer * analyzer, const tipb::Expr &
 {
     const String & func_name = getFunctionName(expr);
     Names argument_names;
-    for (auto & child : expr.children())
+    for (const auto & child : expr.children())
     {
         String name = analyzer->getActions(child, actions);
         argument_names.push_back(name);
@@ -496,7 +496,7 @@ void DAGExpressionAnalyzer::buildGroupConcat(
     /// the last parametric is the separator
     auto child_size = expr.children_size() - 1;
     NamesAndTypes all_columns_names_and_types;
-    String delimiter = "";
+    String delimiter;
     SortDescription sort_description;
     bool only_one_column = true;
     TiDB::TiDBCollators arg_collators;
@@ -636,7 +636,7 @@ extern const String CountSecondStage;
 void DAGExpressionAnalyzer::appendAggregation(
     ExpressionActionsChain & chain,
     const tipb::Aggregation & agg,
-    Names & aggregation_keys,
+    Names & aggregate_keys,
     TiDB::TiDBCollators & collators,
     AggregateDescriptions & aggregate_descriptions,
     bool group_by_collation_sensitive)
@@ -721,7 +721,7 @@ void DAGExpressionAnalyzer::appendAggregation(
         {
             /// note this assume that column with the same name has the same collator
             /// need double check this assumption when we support agg with collation
-            aggregation_keys.push_back(name);
+            aggregate_keys.push_back(name);
             agg_key_set.emplace(name);
         }
         /// when group_by_collation_sensitive is true, TiFlash will do the aggregation with collation
@@ -909,9 +909,9 @@ void DAGExpressionAnalyzer::appendOrderBy(
     }
     initChain(chain, getCurrentInputColumns());
     ExpressionActionsChain::Step & step = chain.steps.back();
-    for (const tipb::ByItem & byItem : topN.order_by())
+    for (const tipb::ByItem & by_item : topN.order_by())
     {
-        String name = getActions(byItem.expr(), step.actions);
+        String name = getActions(by_item.expr(), step.actions);
         auto type = step.actions->getSampleBlock().getByName(name).type;
         order_columns.emplace_back(name, type);
         step.required_output.push_back(name);
@@ -1153,9 +1153,9 @@ void DAGExpressionAnalyzer::appendAggSelect(ExpressionActionsChain & chain, cons
     if (need_update_aggregated_columns)
     {
         aggregated_columns.clear();
-        for (size_t i = 0; i < updated_aggregated_columns.size(); i++)
+        for (const auto & col: updated_aggregated_columns)
         {
-            aggregated_columns.emplace_back(updated_aggregated_columns[i].name, updated_aggregated_columns[i].type);
+            aggregated_columns.emplace_back(col.name, col.type);
         }
     }
 }
@@ -1171,7 +1171,7 @@ void DAGExpressionAnalyzer::generateFinalProject(
     if (unlikely(!keep_session_timezone_info && output_offsets.empty()))
         throw Exception("Root Query block without output_offsets", ErrorCodes::LOGICAL_ERROR);
 
-    auto & current_columns = getCurrentInputColumns();
+    const auto & current_columns = getCurrentInputColumns();
     UniqueNameGenerator unique_name_generator;
     bool need_append_timezone_cast = !keep_session_timezone_info && !context.getTimezoneInfo().is_utc_timezone;
     /// TiDB can not guarantee that the field type in DAG request is accurate, so in order to make things work,
@@ -1183,7 +1183,7 @@ void DAGExpressionAnalyzer::generateFinalProject(
         /// !output_offsets.empty() means root block, we need to append type cast for root block if necessary
         for (UInt32 i : output_offsets)
         {
-            auto & actual_type = current_columns[i].type;
+            const auto & actual_type = current_columns[i].type;
             auto expected_type = getDataTypeByFieldType(schema[i]);
             if (actual_type->getName() != expected_type->getName())
             {
