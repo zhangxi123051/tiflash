@@ -16,6 +16,7 @@
 #include <Storages/Transaction/KVStore.h>
 #include <Storages/Transaction/TMTContext.h>
 #include <fmt/core.h>
+#include <Flash/var.h>
 
 #include <chrono>
 #include <ext/scope_guard.h>
@@ -229,7 +230,11 @@ std::vector<RegionInfo> MPPTask::prepare(const mpp::DispatchTaskRequest & task_r
         mpp::TaskMeta task_meta;
         task_meta.ParseFromString(exchangeSender.encoded_task_meta(i));
         MPPTunnelPtr tunnel = std::make_shared<MPPTunnel>(task_meta, task_request.meta(), timeout, this->shared_from_this());
-        LOG_DEBUG(log, "begin to register the tunnel " << tunnel->id());
+        LOG_DEBUG(log, "begin to register the tunnel " << tunnel->id() << " recv_addr: " << task_meta.address() << " taskid: " << task_meta.start_ts() << " , " <<  task_meta.task_id());
+        if (Tiflash::kGrpcLocalAddr && (*Tiflash::kGrpcLocalAddr) == task_meta.address())
+        {
+            tunnel->is_local = true;
+        }
         registerTunnel(MPPTaskId{task_meta.start_ts(), task_meta.task_id()}, tunnel);
         tunnel_set->addTunnel(tunnel);
         if (!dag_context->isRootMPPTask())
@@ -341,6 +346,9 @@ void MPPTask::runImpl()
 
         while (Block block = from->read())
         {
+//            LOG_DEBUG(log, "mpptask.from: " + from->getName());
+//            LOG_DEBUG(log, "mpptask.to: " + to->getName());
+
             count += block.rows();
             to->write(block);
             FAIL_POINT_PAUSE(FailPoints::hang_in_execution);

@@ -3,6 +3,7 @@
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/Config/ConfigReloader.h>
+#include <Flash/var.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Macros.h>
 #include <Common/RedactHelpers.h>
@@ -507,12 +508,17 @@ public:
         {
             builder.AddListeningPort(raft_config.flash_server_addr, grpc::InsecureServerCredentials());
         }
-
+        Tiflash::kGrpcLocalAddr = std::make_shared<std::string>(raft_config.flash_server_addr);
         /// Init and register flash service.
         flash_service = std::make_unique<FlashService>(server);
         diagnostics_service = std::make_unique<DiagnosticsService>(server);
         builder.SetOption(grpc::MakeChannelArgumentOption("grpc.http2.min_ping_interval_without_data_ms", 10 * 1000));
         builder.SetOption(grpc::MakeChannelArgumentOption("grpc.http2.min_time_between_pings_ms", 10 * 1000));
+        builder.SetSyncServerOption(grpc::ServerBuilder::SyncServerOption::NUM_CQS, 10);
+        builder.SetSyncServerOption(grpc::ServerBuilder::SyncServerOption::MIN_POLLERS, 10);
+        builder.SetSyncServerOption(grpc::ServerBuilder::SyncServerOption::MAX_POLLERS, 50);
+
+        DB::glbFlashService = flash_service.get();
         builder.RegisterService(flash_service.get());
         LOG_INFO(log, "Flash service registered");
         builder.RegisterService(diagnostics_service.get());

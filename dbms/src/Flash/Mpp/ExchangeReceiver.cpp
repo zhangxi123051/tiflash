@@ -1,5 +1,9 @@
+#include <Flash/FlashService.h>
 #include <Flash/Mpp/ExchangeReceiver.h>
+#include <Flash/var.h>
 #include <fmt/core.h>
+
+#include <Flash/MPP/MPPTunnel.h>
 
 namespace pingcap
 {
@@ -80,12 +84,33 @@ void ExchangeReceiver::ReadLoop(const String & meta_raw, size_t source_index)
         req->set_allocated_sender_meta(sender_task);
         LOG_DEBUG(log, "begin start and read : " << req->DebugString());
         ::grpc::Status status = ::grpc::Status::OK;
+        bool is_local = false;
+        if (Tiflash::kGrpcLocalAddr && req->sender_meta().address() == (*Tiflash::kGrpcLocalAddr) )
+        {
+            is_local = true;
+        }
         for (int i = 0; i < 10; i++)
         {
             pingcap::kv::RpcCall<mpp::EstablishMPPConnectionRequest> call(req);
             grpc::ClientContext client_context;
-            auto reader = cluster->rpc_client->sendStreamRequest(req->sender_meta().address(), &client_context, call);
-            reader->WaitForInitialMetadata();
+
+            std::unique_ptr<::grpc::ClientReader<::mpp::MPPDataPacket>> reader = nullptr;
+//            bool is_local = (req->sender_meta().address() == (*Tiflash::kGrpcLocalAddr));
+            MPPTunnelPtr tunnel;
+
+            if (is_local)
+            {
+                std::tuple<MPPTunnelPtr, grpc::Status> localConnRetPair = DB::glbFlashService->EstablishMPPConnectionLocal(req.get());
+                tunnel = std::get<0>(localConnRetPair);
+                status = std::get<1>(localConnRetPair;
+                if (!status.ok()) {
+                    throw Exception("Exchange receiver meet error : " + status.error_message());
+                }
+            } else {
+                reader = cluster->rpc_client->sendStreamRequest(req->sender_meta().address(), &client_context, call);
+                reader->WaitForInitialMetadata();
+            }
+
             std::shared_ptr<ReceivedPacket> packet;
             String req_info = "tunnel" + std::to_string(send_task_id) + "+" + std::to_string(recv_task_id);
             bool has_data = false;
@@ -110,7 +135,18 @@ void ExchangeReceiver::ReadLoop(const String & meta_raw, size_t source_index)
                 }
                 packet->req_info = req_info;
                 packet->source_index = source_index;
-                bool success = reader->Read(packet->packet.get());
+                bool success;
+                if (is_local)
+                {
+                    std::shared_ptr<mpp::MPPDataPacket> tmp_packet = tunnel->read();
+                    success = tmp_packet != nullptr;
+                    if (success) packet->packet = tmp_packet;
+                }
+                else
+                {
+                    success = reader->Read(packet->packet.get());
+                }
+
                 if (!success)
                     break;
                 else
@@ -141,8 +177,8 @@ void ExchangeReceiver::ReadLoop(const String & meta_raw, size_t source_index)
             {
                 break;
             }
-            status = reader->Finish();
-            if (status.ok())
+            if (!is_local) status = reader->Finish();
+            if (is_local || status.ok())
             {
                 LOG_DEBUG(log, "finish read : " << req->DebugString());
                 break;

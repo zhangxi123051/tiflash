@@ -20,6 +20,7 @@ MPPTunnel::MPPTunnel(
     const std::shared_ptr<MPPTask> & current_task_)
     : connected(false)
     , finished(false)
+    , is_local(false)
     , timeout(timeout_)
     , current_task(current_task_)
     , tunnel_id(fmt::format("tunnel{}+{}", sender_meta_.task_id(), receiver_meta_.task_id()))
@@ -50,8 +51,16 @@ void MPPTunnel::close(const String & reason)
         try
         {
             FAIL_POINT_TRIGGER_EXCEPTION(FailPoints::exception_during_mpp_close_tunnel);
-            if (!writer->Write(getPacketWithError(reason)))
-                throw Exception("Failed to write err");
+            if (is_local)
+            {
+                q.push(std::make_shared<mpp::MPPDataPacket>(getPacketWithError(reason)));
+            }
+            else
+            {
+                if (!writer->Write(getPacketWithError(reason)))
+                    throw Exception("Failed to write err");
+            }
+
         }
         catch (...)
         {
@@ -67,18 +76,70 @@ bool MPPTunnel::isTaskCancelled()
     return sp != nullptr && sp->getStatus() == CANCELLED;
 }
 
+std::shared_ptr<mpp::MPPDataPacket> MPPTunnel::read()
+{
+    if (is_local)
+    {
+        while(true) {
+            std::unique_lock<std::mutex> lk(mu);
+            if (!q.empty())
+            {
+                std::shared_ptr<mpp::MPPDataPacket> ret = q.front();
+                q.pop();
+                return ret;
+            }
+            else
+            {
+                if (finished)
+                {
+                     return nullptr;
+                }
+                lk.unlock();
+                usleep(1000);
+            }
+        }
+    }
+
+    return nullptr;
+
+}
+
+
 // TODO: consider to hold a buffer
 void MPPTunnel::write(const mpp::MPPDataPacket & data, bool close_after_write)
 {
+    {
+        while(is_local) {
+            std::unique_lock<std::mutex> lk(mu);
+            if (q.size() > 30) {
+                lk.unlock();
+                usleep(1000);
+            } else {
+                break;
+            }
+        }
+    }
     LOG_TRACE(log, "ready to write");
     {
+        std::shared_ptr<mpp::MPPDataPacket> to_push;
+        if (is_local) to_push = std::make_shared<mpp::MPPDataPacket>(data);
         std::unique_lock<std::mutex> lk(mu);
 
         waitUntilConnectedOrCancelled(lk);
         if (finished)
             throw Exception("write to tunnel which is already closed.");
-        if (!writer->Write(data))
-            throw Exception("Failed to write data");
+        if (is_local)
+        {
+            q.push(to_push);
+        }
+        else
+        {
+//            for(int i =0; i < 10; i++) {
+                if (!writer->Write(data))
+                    throw Exception("Failed to write data");
+//            }
+        }
+
         if (close_after_write)
             finishWithLock();
     }
@@ -92,6 +153,17 @@ void MPPTunnel::writeDone()
 {
     LOG_TRACE(log, "ready to finish");
     {
+        while(is_local)
+        {
+            std::unique_lock<std::mutex> lk(mu);
+            if (q.size() > 0)
+            {
+                lk.unlock();
+                usleep(1000);
+            } else {
+                break;
+            }
+        }
         std::unique_lock<std::mutex> lk(mu);
         if (finished)
             throw Exception("has finished");

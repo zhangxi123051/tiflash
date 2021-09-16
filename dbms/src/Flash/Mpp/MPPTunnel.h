@@ -11,6 +11,7 @@
 #include <condition_variable>
 #include <memory>
 #include <mutex>
+#include <queue>
 
 namespace DB
 {
@@ -33,6 +34,9 @@ public:
     // write a single packet to the tunnel, it will block if tunnel is not ready.
     void write(const mpp::MPPDataPacket & data, bool close_after_write = false);
 
+
+    std::shared_ptr<mpp::MPPDataPacket> read();
+
     // finish the writing.
     void writeDone();
 
@@ -45,7 +49,7 @@ public:
 
     // wait until all the data has been transferred.
     void waitForFinish();
-
+    bool is_local;
 private:
     void waitUntilConnectedOrCancelled(std::unique_lock<std::mutex> & lk);
 
@@ -61,6 +65,7 @@ private:
     bool finished; // if the tunnel has finished its connection.
 
     ::grpc::ServerWriter<::mpp::MPPDataPacket> * writer;
+    std::queue<std::shared_ptr<::mpp::MPPDataPacket>> q;
 
     std::chrono::seconds timeout;
 
