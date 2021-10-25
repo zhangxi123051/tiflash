@@ -83,7 +83,7 @@ public:
     ParallelInputsProcessor(const BlockInputStreams & inputs_, const BlockInputStreamPtr & additional_input_at_end_, size_t max_threads_, Handler & handler_)
         : inputs(inputs_)
         , additional_input_at_end(additional_input_at_end_)
-        , max_threads(std::min(inputs_.size(), 1))
+        , max_threads(std::min(inputs_.size(), max_threads_))
         , handler(handler_)
     {
         for (size_t i = 0; i < inputs_.size(); ++i)
@@ -188,10 +188,10 @@ public:
                     available_inputs.push(unprepared_input);
                 }
             }
-            UInt64 cost1 = watch.elapsedMilliseconds();
+            // UInt64 cost1 = watch.elapsedMilliseconds();
 
             loop(thread_num);
-            UInt64 cost2 = watch.elapsedMilliseconds();
+            // UInt64 cost2 = watch.elapsedMilliseconds();
             // std::cerr<<"proc.thd cost1, cost2: "<<cost1<<"ms "<<(cost2-cost1)<<"ms"<<std::endl;
         }
         catch (...)

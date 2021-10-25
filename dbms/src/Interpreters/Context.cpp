@@ -647,6 +647,7 @@ void Context::calculateUserSettings()
     /// NOTE: we ignore global_context settings (from which it is usually copied)
     /// NOTE: global_context settings are immutable and not auto updated
     settings = Settings();
+    settings.max_threads = 1;
 
     /// 2) Apply settings from default profile ("profiles.*" in `users_config`)
     auto default_profile_name = getDefaultProfileName();

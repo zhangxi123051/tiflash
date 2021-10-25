@@ -25,7 +25,7 @@ ParallelAggregatingBlockInputStream::ParallelAggregatingBlockInputStream(
     , aggregator(params)
     , file_provider(file_provider_)
     , final(final_)
-    , max_threads(std::min(inputs.size(), 1))
+    , max_threads(std::min(inputs.size(), max_threads_))
     , temporary_data_merge_threads(temporary_data_merge_threads_)
     , keys_size(params.keys_size)
     , aggregates_size(params.aggregates_size)
@@ -200,9 +200,12 @@ void ParallelAggregatingBlockInputStream::execute()
 
     for (auto & elem : many_data)
         elem = std::make_shared<AggregatedDataVariants>();
-    processor.thread(0);
-    // processor.process();
-    // processor.wait();
+    if (max_threads == 1) processor.thread(0);
+    else {
+        processor.process();
+        processor.wait();
+    }
+   
 
     rethrowFirstException(exceptions);
 

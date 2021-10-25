@@ -84,9 +84,9 @@ public:
         size_t max_threads,
         const LogWithPrefixPtr & log_,
         ExceptionCallback exception_callback_ = ExceptionCallback())
-        : output_queue(std::min(inputs.size(), 1))
+        : output_queue(std::min(inputs.size(), max_threads))
         , handler(*this)
-        , processor(inputs, additional_input_at_end, 1, handler)
+        , processor(inputs, additional_input_at_end, max_threads, handler)
         , exception_callback(exception_callback_)
         , log(getMPPTaskLog(log_, getName()))
     {
