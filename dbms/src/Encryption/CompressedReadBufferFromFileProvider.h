@@ -7,14 +7,7 @@
 #include <time.h>
 
 #include <memory>
-#include <unordered_map>
-#include <mutex>
-#include <string>
-#include <vector>
 
-extern std::unordered_map<std::string, std::vector<std::string> *> glb_decblk_cache;
-extern std::unordered_map<std::string, std::unordered_map<int, int> *> glb_offset2blkid_cache;
-extern std::mutex glb_dec_mutex;
 
 namespace DB
 {
@@ -52,14 +45,9 @@ private:
     std::unique_ptr<ReadBufferFromFileBase> p_file_in;
     ReadBufferFromFileBase & file_in;
     size_t size_compressed = 0;
-    // std::string buffer;
-    // bool cached_buffer;
 
     bool nextImpl() override;
-    std::vector<std::string>  *decblk;
-     std::unordered_map<int, int> *offset2blkid;
-     int curblkid, curoffset;
-     int cnt = 0;
+
 public:
     CompressedReadBufferFromFileProvider(
         FileProviderPtr & file_provider,
