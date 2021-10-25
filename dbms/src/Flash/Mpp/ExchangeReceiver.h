@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/RecyclableBuffer.h>
+#include <common/ThreadPool.h>
 #include <Flash/Coprocessor/CHBlockChunkCodec.h>
 #include <Flash/Coprocessor/ChunkCodec.h>
 #include <Flash/Coprocessor/DAGContext.h>
@@ -44,7 +45,8 @@ struct ExchangeReceiverResult
         const String & req_info_ = "",
         bool meet_error_ = false,
         const String & error_msg_ = "",
-        bool eof_ = false)
+        bool eof_ = false
+        )
         : resp(resp_)
         , call_index(call_index_)
         , req_info(req_info_)
@@ -80,7 +82,9 @@ public:
         const ::tipb::ExchangeReceiver & exc,
         const ::mpp::TaskMeta & meta,
         size_t max_streams_,
-        const LogWithPrefixPtr & log_);
+        const LogWithPrefixPtr & log_, 
+        ThreadPool  *thd_pool = nullptr
+        );
 
     ~ExchangeReceiverBase();
 
@@ -98,7 +102,7 @@ public:
     String getName() { return "ExchangeReceiver"; }
 
 private:
-    void setUpConnection();
+    void setUpConnection(ThreadPool  *thd_pool = nullptr);
 
     void readLoop(size_t source_index);
 

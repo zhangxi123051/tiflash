@@ -13,7 +13,8 @@ ExchangeReceiverBase<RPCContext>::ExchangeReceiverBase(
     const ::tipb::ExchangeReceiver & exc,
     const ::mpp::TaskMeta & meta,
     size_t max_streams_,
-    const std::shared_ptr<LogWithPrefix> & log_)
+    const std::shared_ptr<LogWithPrefix> & log_,
+        ThreadPool  *thd_pool)
     : rpc_context(std::move(rpc_context_))
     , pb_exchange_receiver(exc)
     , source_num(pb_exchange_receiver.encoded_task_meta_size())
@@ -32,7 +33,7 @@ ExchangeReceiverBase<RPCContext>::ExchangeReceiverBase(
         schema.push_back(std::make_pair(name, info));
     }
 
-    setUpConnection();
+    setUpConnection(thd_pool);
 }
 
 template <typename RPCContext>
@@ -59,12 +60,18 @@ void ExchangeReceiverBase<RPCContext>::cancel()
 }
 
 template <typename RPCContext>
-void ExchangeReceiverBase<RPCContext>::setUpConnection()
+void ExchangeReceiverBase<RPCContext>::setUpConnection(ThreadPool  *thd_pool)
 {
     for (size_t index = 0; index < source_num; ++index)
     {
-        auto t = ThreadFactory(true, "Receiver").newThread(&ExchangeReceiverBase<RPCContext>::readLoop, this, index);
-        workers.push_back(std::move(t));
+        if (thd_pool) {
+            thd_pool->schedule([this, idx=index] {
+                this->readLoop(idx);
+            });
+        } else {
+            auto t = ThreadFactory(true, "Receiver").newThread(&ExchangeReceiverBase<RPCContext>::readLoop, this, index);
+            workers.push_back(std::move(t));
+        }
     }
 }
 

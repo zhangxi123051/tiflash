@@ -76,7 +76,7 @@ void InterpreterDAG::initMPPExchangeReceiver(const DAGQueryBlock & dag_query_blo
             dag_query_block.source->exchange_receiver(),
             dag.getDAGContext().getMPPTaskMeta(),
             max_streams,
-            log);
+            log, context.thd_pool);
     }
 }
 

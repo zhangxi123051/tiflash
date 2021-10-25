@@ -9,6 +9,7 @@
 #include <Storages/PartPathSelector.h>
 #include <common/MultiVersion.h>
 #include <grpc++/grpc++.h>
+#include <common/ThreadPool.h>
 
 #include <chrono>
 #include <condition_variable>
@@ -158,6 +159,7 @@ private:
     Context();
 
 public:
+    ThreadPool  *thd_pool  = nullptr;
     /// Create initial Context with ContextShared and etc.
     static Context createGlobal(std::shared_ptr<IRuntimeComponentsFactory> runtime_components_factory);
     static Context createGlobal();
@@ -483,6 +485,7 @@ public:
     using SessionKey = std::pair<String, String>;
 
     void reloadDeltaTreeConfig(const Poco::Util::AbstractConfiguration & config);
+
 
 private:
     /** Check if the current client has access to the specified database.

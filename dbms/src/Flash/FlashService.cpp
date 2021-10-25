@@ -52,7 +52,7 @@ FlashService::FlashService(IServer & server_)
     size_t cop_pool_size = static_cast<size_t>(settings.cop_pool_size);
     cop_pool_size = cop_pool_size ? cop_pool_size : default_size;
     LOG_INFO(log, "Use a thread pool with " << cop_pool_size << " threads to handle cop requests.");
-    cop_pool = std::make_unique<ThreadPool>(400, [] { setThreadName("cop-pool"); });
+    cop_pool = std::make_unique<ThreadPool>(800, [] { setThreadName("cop-pool"); });
 
     size_t batch_cop_pool_size = static_cast<size_t>(settings.batch_cop_pool_size);
     batch_cop_pool_size = batch_cop_pool_size ? batch_cop_pool_size : default_size;
@@ -158,6 +158,7 @@ grpc::Status FlashService::Coprocessor(
     {
         return status;
     }
+    context.thd_pool = cop_pool.get();
 
     // for(int i =0; i < 10; i++) {
     //     auto [context, status] = createDBContext(grpc_context);
@@ -270,6 +271,7 @@ grpc::Status FlashService::Coprocessor(
         LOG_ERROR(log, "establish error #1");
         return status;
     }
+    context.thd_pool = cop_pool.get();
 
     auto & tmt_context = context.getTMTContext();
     auto task_manager = tmt_context.getMPPTaskManager();
