@@ -13,6 +13,7 @@
 #include <memory>
 #include <mutex>
 #include <thread>
+#include <common/ThreadPool.h>
 
 namespace DB
 {
@@ -55,8 +56,9 @@ public:
     void waitForFinish();
 
     bool isLocal() { return is_local; }
-
-private:
+    ThreadPool  *thd_pool = nullptr; 
+    std::atomic<bool> loop;
+// private:
     void waitUntilConnectedOrCancelled(std::unique_lock<std::mutex> & lk);
 
     // must under mu's protection

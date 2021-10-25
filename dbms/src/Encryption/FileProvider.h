@@ -7,6 +7,12 @@
 #include <Encryption/WritableFile.h>
 
 #include <string>
+#include <queue>
+#include <unordered_map>
+#include <mutex>
+
+extern std::unordered_map<String, std::queue<DB::RandomAccessFilePtr>> glb_fp_cache;
+extern std::mutex fp_cache_mutex;
 
 namespace DB
 {
@@ -29,7 +35,7 @@ public:
         const String & file_path_,
         const EncryptionPath & encryption_path_,
         const ReadLimiterPtr & read_limiter = nullptr,
-        int flags = -1) const;
+        int flags = -1) ;
 
     WritableFilePtr newWritableFile(
         const String & file_path_,
@@ -74,10 +80,14 @@ public:
         const EncryptionPath & dst_encryption_path_,
         bool rename_encryption_info_) const;
 
+    bool payback(const String &file_path_, const RandomAccessFilePtr &fp);
+
     ~FileProvider() = default;
 
 private:
     KeyManagerPtr key_manager;
+//    std::unordered_map<String, std::queue<RandomAccessFilePtr>> fp_cache;
+//    std::mutex fp_cache_mutex;
     bool encryption_enabled;
 };
 

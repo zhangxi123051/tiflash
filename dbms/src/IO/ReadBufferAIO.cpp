@@ -37,7 +37,7 @@ ReadBufferAIO::ReadBufferAIO(const std::string & filename_, size_t buffer_size_,
     , fill_buffer(BufferWithOwnMemory<ReadBuffer>(internalBuffer().size(), nullptr, DEFAULT_AIO_FILE_BLOCK_SIZE))
     , filename(filename_)
 {
-    ProfileEvents::increment(ProfileEvents::FileOpen);
+    // ProfileEvents::increment(ProfileEvents::FileOpen);
 
     int open_flags = (flags_ == -1) ? O_RDONLY : flags_;
     open_flags |= O_DIRECT;

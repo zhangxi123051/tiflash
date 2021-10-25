@@ -31,7 +31,7 @@ WriteBufferFromFile::WriteBufferFromFile(
     : WriteBufferFromFileDescriptor(-1, buf_size, existing_memory, alignment)
     , file_name(file_name_)
 {
-    ProfileEvents::increment(ProfileEvents::FileOpen);
+    // ProfileEvents::increment(ProfileEvents::FileOpen);
 
 #ifdef __APPLE__
     bool o_direct = (flags != -1) && (flags & O_DIRECT);

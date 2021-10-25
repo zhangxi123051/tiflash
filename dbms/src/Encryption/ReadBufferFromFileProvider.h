@@ -43,6 +43,9 @@ private:
     off_t doSeekInFile(off_t offset, int whence) override;
 
 private:
+    FileProviderPtr file_provider;
+    String file_name;
     RandomAccessFilePtr file;
+
 };
 } // namespace DB

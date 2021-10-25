@@ -237,7 +237,7 @@ LearnerReadSnapshot doLearnerRead(
             /// otherwise the desired index will be blocked by the lock of data read.
             if (const auto * proxy_helper = kvstore->getProxyHelper(); proxy_helper)
             {
-                auto res = proxy_helper->batchReadIndex(batch_read_index_req, tmt.batchReadIndexTimeout());
+                auto res = proxy_helper->batchReadIndex(batch_read_index_req, tmt.batchReadIndexTimeout(), true);
                 for (auto && [resp, region_id] : res)
                 {
                     batch_read_index_result.emplace(region_id, std::move(resp));

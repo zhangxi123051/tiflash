@@ -118,15 +118,16 @@ void CreatingSetsBlockInputStream::createAll()
                 {
                     if (isCancelledOrThrowIfKilled())
                         return;
-                    workers.emplace_back(ThreadFactory(true, "CreatingSets").newThread([this, &subquery = elem.second] { createOne(subquery); }));
+                    createOne(elem.second);
+                    // workers.emplace_back(ThreadFactory(true, "CreatingSets").newThread([this, &subquery = elem.second] { createOne(subquery); }));
                     FAIL_POINT_TRIGGER_EXCEPTION(FailPoints::exception_in_creating_set_input_stream);
                 }
             }
         }
-        for (auto & work : workers)
-        {
-            work.join();
-        }
+        // for (auto & work : workers)
+        // {
+            // work.join();
+        // }
 
         if (!exception_from_workers.empty())
             std::rethrow_exception(exception_from_workers.front());

@@ -1,11 +1,16 @@
 #pragma once
 
 #include <Common/COWPtr.h>
+#include <Common/Stopwatch.h>
 #include <Core/Field.h>
 
 #include <boost/noncopyable.hpp>
 #include <memory>
+#include <atomic>
 
+extern std::atomic<long long> idt_tot_cost;
+extern std::atomic<long long> idt_read_cnt;
+extern std::atomic<long long> idt_last_print;
 
 namespace DB
 {
@@ -157,7 +162,17 @@ public:
         bool position_independent_encoding,
         SubstreamPath && path) const
     {
+      // Stopwatch watch;
         deserializeBinaryBulkWithMultipleStreams(column, getter, limit, avg_value_size_hint, position_independent_encoding, path);
+        // long long sum = idt_tot_cost += watch.elapsed()/1000000;
+        // long long cnt = idt_read_cnt++;
+        // long long cur_time = StopWatchDetail::nanoseconds(CLOCK_MONOTONIC)/1000000000ULL;
+        // if (cnt && cur_time - idt_last_print > 1) {
+          // idt_last_print = cur_time;
+          // idt_tot_cost -= sum;
+          // idt_read_cnt -= cnt;
+          // std::cerr<<"idt.stats, tot_cost, read_cnt, avg_cost: "<<sum<<"ms "<<cnt<<" "<<(sum/cnt)<<"ms\n";
+        // }
     }
 
     /** Override these methods for data types that require just single stream (most of data types).

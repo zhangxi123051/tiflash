@@ -79,7 +79,7 @@ ssize_t PosixWritableFile::pwrite(char * buf, size_t size, off_t offset) const
 
 void PosixWritableFile::doOpenFile(bool truncate_when_exists_, int flags, mode_t mode)
 {
-    ProfileEvents::increment(ProfileEvents::FileOpen);
+    // ProfileEvents::increment(ProfileEvents::FileOpen);
 #ifdef __APPLE__
     bool o_direct = (flags != -1) && (flags & O_DIRECT);
     if (o_direct)

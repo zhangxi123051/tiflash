@@ -8,21 +8,55 @@
 #include <Storages/Transaction/FileEncryption.h>
 #include <common/likely.h>
 
+std::unordered_map<String, std::queue<DB::RandomAccessFilePtr>> glb_fp_cache;
+std::mutex fp_cache_mutex;
+
 namespace DB
 {
 RandomAccessFilePtr FileProvider::newRandomAccessFile(
     const String & file_path_,
     const EncryptionPath & encryption_path_,
     const ReadLimiterPtr & read_limiter,
-    int flags) const
+    int flags)
 {
-    RandomAccessFilePtr file = std::make_shared<PosixRandomAccessFile>(file_path_, flags, read_limiter);
+    RandomAccessFilePtr file = nullptr;
+    // {
+    //     std::unique_lock<std::mutex> lock(fp_cache_mutex);
+    //     if (glb_fp_cache.count(file_path_)) {
+    //         auto q = glb_fp_cache[file_path_];
+    //         if (q.size()) {
+    //             file = q.front();
+    //             q.pop();
+    //         } else {
+    //             file = std::make_shared<PosixRandomAccessFile>(file_path_, flags, read_limiter);
+    //         }
+    //     } else {
+    //         glb_fp_cache[file_path_] = std::queue<RandomAccessFilePtr>();
+    //         file = std::make_shared<PosixRandomAccessFile>(file_path_, flags, read_limiter);
+    //     }
+    // }
+   file = std::make_shared<PosixRandomAccessFile>(file_path_, flags, read_limiter);
     auto encryption_info = key_manager->getFile(encryption_path_.full_path);
     if (encryption_info.res != FileEncryptionRes::Disabled && encryption_info.method != EncryptionMethod::Plaintext)
     {
         file = std::make_shared<EncryptedRandomAccessFile>(file, AESCTRCipherStream::createCipherStream(encryption_info, encryption_path_));
     }
     return file;
+}
+
+bool FileProvider::payback(const String &file_path_, const RandomAccessFilePtr &fp) {
+    if (fp == nullptr) return false;
+    // {
+    //     std::unique_lock<std::mutex> lock(fp_cache_mutex);
+    //     if (glb_fp_cache.count(file_path_)) {
+    //         auto q = glb_fp_cache[file_path_];
+    //         q.push(fp);
+    //     } else {
+    //         glb_fp_cache[file_path_] = std::queue<RandomAccessFilePtr>();
+    //         glb_fp_cache[file_path_].push(fp);
+    //     }
+    // }
+    return true;
 }
 
 WritableFilePtr FileProvider::newWritableFile(

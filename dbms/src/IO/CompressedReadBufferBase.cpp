@@ -13,6 +13,13 @@
 #include <zstd.h>
 
 #include <vector>
+#include <thread>
+#include <memory>
+#include <Common/Stopwatch.h>
+
+ std::atomic<long long> crbb_tot_cost;
+ std::atomic<long long> crbb_read_cnt;
+ std::atomic<long long> crbb_last_print;
 
 
 namespace ProfileEvents
@@ -108,8 +115,26 @@ void CompressedReadBufferBase<has_checksum>::decompress(char * to, size_t size_d
 
     if (method == static_cast<UInt8>(CompressionMethodByte::LZ4))
     {
+        // std::vector<std::shared_ptr<std::thread>> thds;
+        // int thd_cap = 4;
+        // for(int i = 0; i < thd_cap; i++) {
+        //    thds.push_back(std::make_shared<std::thread>(LZ4_decompress_fast, compressed_buffer + COMPRESSED_BLOCK_HEADER_SIZE, to, size_decompressed));
+        // }
+        // for(int i = 0; i < thd_cap; i++) {
+        //     thds[i]->join();
+        // }
+        // Stopwatch watch;
         if (LZ4_decompress_fast(compressed_buffer + COMPRESSED_BLOCK_HEADER_SIZE, to, size_decompressed) < 0)
             throw Exception("Cannot LZ4_decompress_fast", ErrorCodes::CANNOT_DECOMPRESS);
+        // long long sum = crbb_tot_cost += watch.elapsed()/1000;
+        // long long cnt = crbb_read_cnt++;
+        // long long cur_time = StopWatchDetail::nanoseconds(CLOCK_MONOTONIC)/1000000000ULL;
+        // if (cnt && cur_time - crbb_last_print > 1) {
+        //   crbb_last_print = cur_time;
+        //   crbb_tot_cost -= sum;
+        //   crbb_read_cnt -= cnt;
+        //   std::cerr<<"crbb.stats, tot_cost, read_cnt, avg_cost: "<<sum/1000<<"ms "<<cnt<<" "<<(sum*1.0/1000/cnt)<<"ms\n";
+        // }
     }
     else if (method == static_cast<UInt8>(CompressionMethodByte::ZSTD))
     {

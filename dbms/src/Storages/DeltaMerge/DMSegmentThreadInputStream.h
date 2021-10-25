@@ -1,12 +1,13 @@
 #pragma once
 
 #include <Common/FailPoint.h>
+#include <Common/Stopwatch.h>
 #include <DataStreams/IProfilingBlockInputStream.h>
 #include <Flash/Mpp/getMPPTaskLog.h>
 #include <Interpreters/Context.h>
 #include <Storages/DeltaMerge/Segment.h>
 #include <Storages/DeltaMerge/SegmentReadTaskPool.h>
-
+#include <iostream>
 namespace DB
 {
 namespace FailPoints
@@ -46,6 +47,11 @@ public:
         , do_range_filter_for_raw(do_range_filter_for_raw_)
         , log(getMPPTaskLog(log_, getName()))
     {
+        tot_cost = 0;
+        read_cnt = 0;
+    }
+    ~DMSegmentThreadInputStream() {
+        // std::cerr<<"DMSegThd.read tot_cost, cnt, avg_cost: "<<tot_cost<<"us "<<read_cnt<<" "<<(tot_cost/(read_cnt? read_cnt:1) )<<"us\n";
     }
 
     String getName() const override { return "DeltaMergeSegmentThread"; }
@@ -57,6 +63,9 @@ protected:
         FilterPtr filter_;
         return readImpl(filter_, false);
     }
+
+    double tot_cost = 0;
+    int read_cnt = 0;
 
     Block readImpl(FilterPtr & res_filter, bool return_filter) override
     {
@@ -93,9 +102,10 @@ protected:
                 LOG_TRACE(log, "Start to read segment [" + DB::toString(cur_segment->segmentId()) + "]");
             }
             FAIL_POINT_PAUSE(FailPoints::pause_when_reading_from_dt_stream);
-
+            // Stopwatch watch;
             Block res = cur_stream->read(res_filter, return_filter);
-
+            // tot_cost += watch.elapsed()/1000;
+            // read_cnt++;
             if (res)
             {
                 if (!res.rows())

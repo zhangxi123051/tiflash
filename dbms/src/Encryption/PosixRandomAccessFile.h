@@ -4,7 +4,15 @@
 #include <Encryption/RandomAccessFile.h>
 
 #include <string>
+#include <string>
+#include <queue>
+#include <unordered_map>
+#include <mutex>
 
+extern std::unordered_map<String, std::queue<int>> glb_fp_map;
+extern std::unordered_map<String, std::string*> glb_filebin_map;
+extern std::mutex filebin_map_mutex;
+extern std::mutex fp_map_mutex;
 namespace CurrentMetrics
 {
 extern const Metric OpenFileForRead;
@@ -43,6 +51,9 @@ private:
     std::string file_name;
     int fd;
     ReadLimiterPtr read_limiter;
+    const char* local_bin;
+    long long local_bin_offset;
+    long long local_cap;
 };
 
 } // namespace DB

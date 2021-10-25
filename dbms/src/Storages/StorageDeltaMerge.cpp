@@ -605,21 +605,21 @@ BlockInputStreams StorageDeltaMerge::read(
     LOG_DEBUG(log, "Read with tso: " << mvcc_query_info.read_tso);
 
     // Check whether tso is smaller than TiDB GcSafePoint
-    const auto check_read_tso = [&tmt, &context, this](UInt64 read_tso) {
-        auto pd_client = tmt.getPDClient();
-        if (likely(!pd_client->isMock()))
-        {
-            auto safe_point = PDClientHelper::getGCSafePointWithRetry(
-                pd_client,
-                /* ignore_cache= */ false,
-                global_context.getSettingsRef().safe_point_update_interval_seconds);
-            if (read_tso < safe_point)
-                throw Exception("query id: " + context.getCurrentQueryId() + ", read tso: " + DB::toString(read_tso)
-                                    + " is smaller than tidb gc safe point: " + DB::toString(safe_point),
-                                ErrorCodes::LOGICAL_ERROR);
-        }
-    };
-    check_read_tso(mvcc_query_info.read_tso);
+    // const auto check_read_tso = [&tmt, &context, this](UInt64 read_tso) {
+    //     auto pd_client = tmt.getPDClient();
+    //     if (likely(!pd_client->isMock()))
+    //     {
+    //         auto safe_point = PDClientHelper::getGCSafePointWithRetry(
+    //             pd_client,
+    //             /* ignore_cache= */ false,
+    //             global_context.getSettingsRef().safe_point_update_interval_seconds);
+    //         if (read_tso < safe_point)
+    //             throw Exception("query id: " + context.getCurrentQueryId() + ", read tso: " + DB::toString(read_tso)
+    //                                 + " is smaller than tidb gc safe point: " + DB::toString(safe_point),
+    //                             ErrorCodes::LOGICAL_ERROR);
+    //     }
+    // };
+    // check_read_tso(mvcc_query_info.read_tso);
 
     String str_query_ranges;
     if (unlikely(log->trace()))
@@ -697,7 +697,7 @@ BlockInputStreams StorageDeltaMerge::read(
         parseSegmentSet(select_query.segment_expression_list));
 
     /// Ensure read_tso info after read.
-    check_read_tso(mvcc_query_info.read_tso);
+    // check_read_tso(mvcc_query_info.read_tso);
 
     LOG_TRACE(log, "[ranges: " << ranges.size() << "] [streams: " << streams.size() << "]");
 

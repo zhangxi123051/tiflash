@@ -102,81 +102,82 @@ WriteLimiter::~WriteLimiter()
 
 void WriteLimiter::request(Int64 bytes)
 {
-    std::unique_lock<std::mutex> lock(request_mutex);
+    return;
+    // std::unique_lock<std::mutex> lock(request_mutex);
 
-    if (stop)
-        return;
+    // if (stop)
+    //     return;
 
-    // 0 means no limit
-    if (!refill_balance_per_period)
-        return;
+    // // 0 means no limit
+    // if (!refill_balance_per_period)
+    //     return;
 
-    metricRequestBytes(type, bytes);
-    if (canGrant(bytes))
-    {
-        consumeBytes(bytes);
-        return;
-    }
+    // metricRequestBytes(type, bytes);
+    // if (canGrant(bytes))
+    // {
+    //     consumeBytes(bytes);
+    //     return;
+    // }
 
-    auto pending_request = pendingRequestMetrics(type);
+    // auto pending_request = pendingRequestMetrics(type);
 
-    // request cannot be satisfied at this moment, enqueue
-    Request r(bytes);
-    req_queue.push_back(&r);
-    while (!r.granted)
-    {
-        assert(!req_queue.empty());
+    // // request cannot be satisfied at this moment, enqueue
+    // Request r(bytes);
+    // req_queue.push_back(&r);
+    // while (!r.granted)
+    // {
+    //     assert(!req_queue.empty());
 
-        bool timed_out = false;
-        // if this request is in the front of req_queue,
-        // then it is responsible to trigger the refill process.
-        if (req_queue.front() == &r)
-        {
-            UInt64 elapsed_ms = refill_stop_watch.elapsedMilliseconds();
-            if (elapsed_ms >= refill_period_ms)
-            {
-                timed_out = true;
-            }
-            else
-            {
-                // Wait for next refill period.
-                auto status = r.cv.wait_for(lock, std::chrono::milliseconds(refill_period_ms - elapsed_ms));
-                timed_out = (status == std::cv_status::timeout);
-            }
-            if (timed_out)
-            {
-                refill_stop_watch.restart();
-            }
-        }
-        else
-        {
-            // Not at the front of queue, just wait
-            r.cv.wait(lock);
-        }
+    //     bool timed_out = false;
+    //     // if this request is in the front of req_queue,
+    //     // then it is responsible to trigger the refill process.
+    //     if (req_queue.front() == &r)
+    //     {
+    //         UInt64 elapsed_ms = refill_stop_watch.elapsedMilliseconds();
+    //         if (elapsed_ms >= refill_period_ms)
+    //         {
+    //             timed_out = true;
+    //         }
+    //         else
+    //         {
+    //             // Wait for next refill period.
+    //             auto status = r.cv.wait_for(lock, std::chrono::milliseconds(refill_period_ms - elapsed_ms));
+    //             timed_out = (status == std::cv_status::timeout);
+    //         }
+    //         if (timed_out)
+    //         {
+    //             refill_stop_watch.restart();
+    //         }
+    //     }
+    //     else
+    //     {
+    //         // Not at the front of queue, just wait
+    //         r.cv.wait(lock);
+    //     }
 
-        // request_mutex is held from now on
-        if (stop)
-        {
-            requests_to_wait--;
-            exit_cv.notify_one();
-            return;
-        }
+    //     // request_mutex is held from now on
+    //     if (stop)
+    //     {
+    //         requests_to_wait--;
+    //         exit_cv.notify_one();
+    //         return;
+    //     }
 
-        // time to do refill
-        if (req_queue.front() == &r && timed_out)
-        {
-            refillAndAlloc();
+    //     // time to do refill
+    //     if (req_queue.front() == &r && timed_out)
+    //     {
+    //         refillAndAlloc();
 
-            if (r.granted)
-            {
-                // current leader is granted with enough balance,
-                // notify the current header of the queue.
-                if (!req_queue.empty())
-                    req_queue.front()->cv.notify_one();
-                break;
-            }
-        }
-    }
+    //         if (r.granted)
+    //         {
+    //             // current leader is granted with enough balance,
+    //             // notify the current header of the queue.
+    //             if (!req_queue.empty())
+    //                 req_queue.front()->cv.notify_one();
+    //             break;
+    //         }
+    //     }
+    // }
 }
 
 size_t WriteLimiter::setStop()

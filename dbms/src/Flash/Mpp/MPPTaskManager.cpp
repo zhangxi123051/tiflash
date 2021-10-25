@@ -60,7 +60,7 @@ void MPPTaskManager::cancelMPPQuery(UInt64 query_id, const String & reason)
         task_set = it->second;
         cv.notify_all();
     }
-    LOG_WARNING(log, fmt::format("Begin cancel query: {}", query_id));
+    LOG_WARNING(log, fmt::format("Begin cancel query: {} {}", query_id,reason));
     std::stringstream ss;
     ss << "Remaining task in query " + std::to_string(query_id) + " are: ";
     // TODO: cancel tasks in order rather than issuing so many threads to cancel tasks

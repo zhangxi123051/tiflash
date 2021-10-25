@@ -3,12 +3,14 @@
 #include <Flash/Mpp/MPPTask.h>
 #include <common/logger_useful.h>
 #include <kvproto/mpp.pb.h>
+#include <common/ThreadPool.h>
 
 namespace DB
 {
 class MPPHandler
 {
-    const mpp::DispatchTaskRequest & task_request;
+    // const 
+    mpp::DispatchTaskRequest task_request;
 
     Poco::Logger * log;
 
@@ -17,7 +19,7 @@ public:
         : task_request(task_request_)
         , log(&Poco::Logger::get("MPPHandler"))
     {}
-    grpc::Status execute(Context & context, mpp::DispatchTaskResponse * response);
+    grpc::Status execute(Context & context, mpp::DispatchTaskResponse * response, bool mock = false,  ThreadPool  *thd_pool = nullptr);
     void handleError(const MPPTaskPtr & task, String error);
 };
 

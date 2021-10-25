@@ -79,11 +79,23 @@ void MPPTask::finishWrite()
     }
 }
 
+static void MpptaskRunImpl(std::shared_ptr<MPPTask> mpptask) {
+    mpptask->runImpl();
+}
+
 void MPPTask::run()
 {
     memory_tracker = current_memory_tracker;
-    auto worker = ThreadFactory(true, "MPPTask").newThread(&MPPTask::runImpl, this->shared_from_this());
-    worker.detach();
+    if (thd_pool) {
+        runfg = false;
+        thd_pool->schedule([&] {MpptaskRunImpl(this->shared_from_this());});
+        while(!runfg) {
+            usleep(1);
+        }
+    } else {
+        auto worker = ThreadFactory(true, "MPPTask").newThread(&MPPTask::runImpl, this->shared_from_this());
+        worker.detach();
+    }
 }
 
 void MPPTask::registerTunnel(const MPPTaskId & id, MPPTunnelPtr tunnel)
@@ -240,8 +252,10 @@ std::vector<RegionInfo> MPPTask::prepare(const mpp::DispatchTaskRequest & task_r
         task_meta.ParseFromString(exchangeSender.encoded_task_meta(i));
         bool is_local = meta.address() == task_meta.address();
         MPPTunnelPtr tunnel = std::make_shared<MPPTunnel>(task_meta, task_request.meta(), timeout, task_cancelled_callback, context.getSettings().max_threads, is_local);
-        LOG_DEBUG(log, "begin to register the tunnel " << tunnel->id());
+        LOG_INFO(log, "begin to register the tunnel " << tunnel->id());
         registerTunnel(MPPTaskId{task_meta.start_ts(), task_meta.task_id()}, tunnel);
+        tunnel->thd_pool = thd_pool;
+        if (mock) tunnel->connect(nullptr);
         tunnel_set->addTunnel(tunnel);
         if (!dag_context->isRootMPPTask())
         {
@@ -251,7 +265,7 @@ std::vector<RegionInfo> MPPTask::prepare(const mpp::DispatchTaskRequest & task_r
     dag_context->tunnel_set = tunnel_set;
     // register task.
     auto task_manager = tmt_context.getMPPTaskManager();
-    LOG_DEBUG(log, "begin to register the task " << id.toString());
+    LOG_INFO(log, "begin to register the task " << id.toString());
 
     if (dag_context->isRootMPPTask())
     {
@@ -281,12 +295,14 @@ void MPPTask::preprocess()
 
 void MPPTask::runImpl()
 {
+    runfg = true;
     CPUAffinityManager::getInstance().bindSelfQueryThread();
     if (!switchStatus(INITIALIZING, RUNNING))
     {
         LOG_WARNING(log, "task not in initializing state, skip running");
         return;
     }
+    LOG_INFO(log, "task status#1: " <<status.load());
 
     current_memory_tracker = memory_tracker;
     Stopwatch stopwatch;
@@ -297,10 +313,11 @@ void MPPTask::runImpl()
         GET_METRIC(tiflash_coprocessor_request_duration_seconds, type_run_mpp_task).Observe(stopwatch.elapsedSeconds());
     });
     String err_msg;
-    LOG_INFO(log, "task starts running");
+    LOG_INFO(log, "task status#2: " <<status.load());
     try
     {
         preprocess();
+        LOG_INFO(log, "task status#3: " <<status.load());
         if (status.load() != RUNNING)
         {
             /// when task is in running state, cancel the task will call sendCancelToQuery to do the cancellation, however
@@ -361,11 +378,12 @@ void MPPTask::runImpl()
     {
         writeErrToAllTunnels(err_msg);
     }
-    LOG_INFO(log, "task ends, time cost is " << std::to_string(stopwatch.elapsedMilliseconds()) << " ms.");
+    // LOG_INFO(log, "task ends, time cost is " << std::to_string(stopwatch.elapsedMilliseconds()) << " ms.");
     unregisterTask();
 
     if (switchStatus(RUNNING, FINISHED))
-        LOG_INFO(log, "finish task");
+        // LOG_INFO(log, "finish task")
+        ;
     else
         LOG_WARNING(log, "finish task which was cancelled before");
 }

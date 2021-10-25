@@ -30,6 +30,10 @@ public:
         size_t temporary_data_merge_threads_,
         const LogWithPrefixPtr & log_);
 
+    // ~ParallelAggregatingBlockInputStream() {
+    //     std::cerr<<"agg processor.thread() cnt, tot_cost, avg_cost: "<<read_cnt<<" "<<tot_cost<<"s "<<(tot_cost/(read_cnt? read_cnt:1) )<<"s"<<std::endl;;
+    // }
+
     String getName() const override { return "ParallelAggregating"; }
 
     void cancel(bool kill) override;
@@ -128,6 +132,8 @@ private:
     std::unique_ptr<IBlockInputStream> impl;
 
     LogWithPrefixPtr log;
+    double tot_cost;
+    int read_cnt;
 };
 
 } // namespace DB

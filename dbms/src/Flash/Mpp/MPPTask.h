@@ -16,6 +16,7 @@
 #include <atomic>
 #include <boost/noncopyable.hpp>
 #include <memory>
+#include <common/ThreadPool.h>
 
 namespace DB
 {
@@ -64,8 +65,10 @@ public:
     std::pair<MPPTunnelPtr, String> getTunnel(const ::mpp::EstablishMPPConnectionRequest * request);
 
     ~MPPTask();
-
-private:
+bool mock = false;
+std::atomic<bool> runfg;
+ ThreadPool  *thd_pool = nullptr;
+// private:
     MPPTask(const mpp::TaskMeta & meta_, const Context & context_);
 
     void runImpl();
@@ -112,6 +115,8 @@ private:
     Exception err;
 
     friend class MPPTaskManager;
+   
+    
 };
 
 using MPPTaskPtr = std::shared_ptr<MPPTask>;

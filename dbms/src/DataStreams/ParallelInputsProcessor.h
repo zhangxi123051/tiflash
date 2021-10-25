@@ -83,7 +83,7 @@ public:
     ParallelInputsProcessor(const BlockInputStreams & inputs_, const BlockInputStreamPtr & additional_input_at_end_, size_t max_threads_, Handler & handler_)
         : inputs(inputs_)
         , additional_input_at_end(additional_input_at_end_)
-        , max_threads(std::min(inputs_.size(), max_threads_))
+        , max_threads(std::min(inputs_.size(), 1))
         , handler(handler_)
     {
         for (size_t i = 0; i < inputs_.size(); ++i)
@@ -106,9 +106,13 @@ public:
     void process()
     {
         active_threads = max_threads;
-        threads.reserve(max_threads);
-        for (size_t i = 0; i < max_threads; ++i)
-            threads.emplace_back(ThreadFactory(true, handler.getName()).newThread([this, i] { thread(i); }));
+        // threads.reserve(max_threads);
+        if (max_threads == 1) {
+            thread(0);
+        } else {
+            for (size_t i = 0; i < max_threads; ++i)
+                threads.emplace_back(ThreadFactory(true, handler.getName()).newThread([this, i] { thread(i); }));
+        }
     }
 
     /// Ask all sources to stop earlier than they run out.
@@ -154,31 +158,6 @@ public:
         return active_threads;
     }
 
-private:
-    /// Single source data
-    struct InputData
-    {
-        BlockInputStreamPtr in;
-        size_t i; /// The source number (for debugging).
-
-        InputData() {}
-        InputData(const BlockInputStreamPtr & in_, size_t i_)
-            : in(in_)
-            , i(i_)
-        {}
-    };
-
-    void publishPayload(BlockInputStreamPtr & stream, Block & block, size_t thread_num)
-    {
-        if constexpr (mode == StreamUnionMode::Basic)
-            handler.onBlock(block, thread_num);
-        else
-        {
-            BlockExtraInfo extra_info = stream->getBlockExtraInfo();
-            handler.onBlock(block, extra_info, thread_num);
-        }
-    }
-
     void thread(size_t thread_num)
     {
         std::exception_ptr exception;
@@ -188,6 +167,7 @@ private:
 
         try
         {
+            Stopwatch watch;
             while (!finish)
             {
                 InputData unprepared_input;
@@ -208,8 +188,11 @@ private:
                     available_inputs.push(unprepared_input);
                 }
             }
+            UInt64 cost1 = watch.elapsedMilliseconds();
 
             loop(thread_num);
+            UInt64 cost2 = watch.elapsedMilliseconds();
+            // std::cerr<<"proc.thd cost1, cost2: "<<cost1<<"ms "<<(cost2-cost1)<<"ms"<<std::endl;
         }
         catch (...)
         {
@@ -250,10 +233,40 @@ private:
         }
     }
 
+
+private:
+    /// Single source data
+    struct InputData
+    {
+        BlockInputStreamPtr in;
+        size_t i; /// The source number (for debugging).
+
+        InputData() {}
+        InputData(const BlockInputStreamPtr & in_, size_t i_)
+            : in(in_)
+            , i(i_)
+        {}
+    };
+
+    void publishPayload(BlockInputStreamPtr & stream, Block & block, size_t thread_num)
+    {
+        if constexpr (mode == StreamUnionMode::Basic)
+            handler.onBlock(block, thread_num);
+        else
+        {
+            BlockExtraInfo extra_info = stream->getBlockExtraInfo();
+            handler.onBlock(block, extra_info, thread_num);
+        }
+    }
+
+    
     void loop(size_t thread_num)
     {
+        UInt64 sum_c1 = 0, sum_c2 = 0, sum_c3 = 0, loop = 0;
         while (!finish) /// You may need to stop work earlier than all sources run out.
         {
+            loop++;
+            Stopwatch watch;
             InputData input;
 
             /// Select the next source.
@@ -269,10 +282,12 @@ private:
                 /// We remove the source from the queue of available sources.
                 available_inputs.pop();
             }
-
+            UInt64 cost1 = watch.elapsedMilliseconds();
+            sum_c1 += cost1;
             /// The main work.
             Block block = input.in->read();
-
+            UInt64 cost2 = watch.elapsedMilliseconds() - cost1;
+            sum_c2 += cost2;
             {
                 if (finish)
                     break;
@@ -298,7 +313,10 @@ private:
                 if (block)
                     publishPayload(input.in, block, thread_num);
             }
+            UInt64 cost3 = watch.elapsedMilliseconds() - cost2 - cost1;
+            sum_c3 += cost3;
         }
+        // std::cerr<<"proc.loop, c1, c2, c3, loop: "<<sum_c1<<"ms "<<sum_c2<<"ms "<<sum_c3<<"ms "<<loop<<std::endl;
     }
 
     BlockInputStreams inputs;

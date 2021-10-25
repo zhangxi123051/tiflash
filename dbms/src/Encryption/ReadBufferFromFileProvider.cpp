@@ -28,7 +28,7 @@ ReadBufferFromFileProvider::ReadBufferFromFileProvider(
     int flags,
     char * existing_memory,
     size_t alignment)
-    : ReadBufferFromFileDescriptor(-1, buf_size, existing_memory, alignment)
+    : file_provider(file_provider_), file_name(file_name_), ReadBufferFromFileDescriptor(-1, buf_size, existing_memory, alignment)
     , file(file_provider_->newRandomAccessFile(file_name_, encryption_path_, read_limiter, flags))
 {
     fd = file->getFd();
@@ -36,7 +36,7 @@ ReadBufferFromFileProvider::ReadBufferFromFileProvider(
 
 void ReadBufferFromFileProvider::close()
 {
-    file->close();
+//    file->close();
 }
 
 bool ReadBufferFromFileProvider::nextImpl()
@@ -85,8 +85,11 @@ ReadBufferFromFileProvider::~ReadBufferFromFileProvider()
 {
     if (file->isClosed())
         return;
-
-    file->close();
+    if (file)
+    {
+        file_provider->payback(file_name, file);
+        //    file->close();
+    }
 }
 
 } // namespace DB

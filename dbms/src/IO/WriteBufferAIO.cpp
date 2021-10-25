@@ -47,7 +47,7 @@ WriteBufferAIO::WriteBufferAIO(const std::string & filename_, size_t buffer_size
     flush_buffer.buffer().resize(this->buffer().size() - DEFAULT_AIO_FILE_BLOCK_SIZE);
     flush_buffer.internalBuffer().resize(this->internalBuffer().size() - DEFAULT_AIO_FILE_BLOCK_SIZE);
 
-    ProfileEvents::increment(ProfileEvents::FileOpen);
+    // ProfileEvents::increment(ProfileEvents::FileOpen);
 
     int open_flags = (flags_ == -1) ? (O_RDWR | O_TRUNC | O_CREAT) : flags_;
     open_flags |= O_DIRECT;

@@ -7,6 +7,9 @@
 
 #include <atomic>
 #include <memory>
+#include <mutex>
+#include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace kvrpcpb
@@ -15,6 +18,8 @@ class ReadIndexResponse;
 class ReadIndexRequest;
 } // namespace kvrpcpb
 
+extern std::unordered_map<std::string, std::shared_ptr<std::vector<std::pair<kvrpcpb::ReadIndexResponse, uint64_t>>>> learner_cache;
+extern std::mutex learner_cache_mutex;
 namespace DB
 {
 class TMTContext;
@@ -52,7 +57,7 @@ struct TiFlashRaftProxyHelper : RaftStoreProxyFFIHelper
     FileEncryptionInfo deleteFile(const std::string &) const;
     FileEncryptionInfo linkFile(const std::string &, const std::string &) const;
     kvrpcpb::ReadIndexResponse readIndex(const kvrpcpb::ReadIndexRequest &) const;
-    BatchReadIndexRes batchReadIndex(const std::vector<kvrpcpb::ReadIndexRequest> &, uint64_t) const;
+    BatchReadIndexRes batchReadIndex(const std::vector<kvrpcpb::ReadIndexRequest> &, uint64_t, bool use_cached = false) const;
 };
 
 extern "C" {

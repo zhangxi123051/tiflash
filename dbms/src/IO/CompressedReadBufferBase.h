@@ -2,6 +2,12 @@
 
 #include <Common/PODArray.h>
 
+#include <atomic>
+
+extern std::atomic<long long> crbb_tot_cost;
+extern std::atomic<long long> crbb_read_cnt;
+extern std::atomic<long long> crbb_last_print;
+
 
 namespace DB
 {

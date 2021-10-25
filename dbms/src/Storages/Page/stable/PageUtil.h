@@ -62,7 +62,7 @@ namespace PageUtil
 template <bool read, bool must_exist = true>
 int openFile(const std::string & path)
 {
-    ProfileEvents::increment(ProfileEvents::FileOpen);
+    // ProfileEvents::increment(ProfileEvents::FileOpen);
 
     int flags;
     if constexpr (read)

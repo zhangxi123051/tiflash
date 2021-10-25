@@ -25,14 +25,15 @@ void MPPHandler::handleError(const MPPTaskPtr & task, String error)
     }
 }
 // execute is responsible for making plan , register tasks and tunnels and start the running thread.
-grpc::Status MPPHandler::execute(Context & context, mpp::DispatchTaskResponse * response)
+grpc::Status MPPHandler::execute(Context & context, mpp::DispatchTaskResponse * response, bool mock, ThreadPool  *thd_pool)
 {
     MPPTaskPtr task = nullptr;
     try
     {
         Stopwatch stopwatch;
         task = MPPTask::newTask(task_request.meta(), context);
-
+        // task->mock = mock;
+        task->thd_pool = thd_pool;
         auto retry_regions = task->prepare(task_request);
         for (auto region : retry_regions)
         {
@@ -49,8 +50,9 @@ grpc::Status MPPHandler::execute(Context & context, mpp::DispatchTaskResponse * 
         {
             FAIL_POINT_TRIGGER_EXCEPTION(FailPoints::exception_before_mpp_non_root_task_run);
         }
+        
         task->run();
-        LOG_INFO(log, "processing dispatch is over; the time cost is " << std::to_string(stopwatch.elapsedMilliseconds()) << " ms");
+        // LOG_INFO(log, "processing dispatch is over; the time cost is " << std::to_string(stopwatch.elapsedMilliseconds()) << " ms");
     }
     catch (Exception & e)
     {

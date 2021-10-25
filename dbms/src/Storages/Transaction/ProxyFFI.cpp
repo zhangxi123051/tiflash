@@ -7,6 +7,10 @@
 #include <Storages/Transaction/Region.h>
 #include <Storages/Transaction/TMTContext.h>
 #include <diagnosticspb.pb.h>
+#include <iostream>
+
+std::unordered_map<std::string, std::shared_ptr<std::vector<std::pair<kvrpcpb::ReadIndexResponse, uint64_t>>>> learner_cache;
+std::mutex learner_cache_mutex;
 
 namespace CurrentMetrics
 {
@@ -227,20 +231,52 @@ kvrpcpb::ReadIndexResponse TiFlashRaftProxyHelper::readIndex(const kvrpcpb::Read
     return std::move(res.at(0).first);
 }
 
-BatchReadIndexRes TiFlashRaftProxyHelper::batchReadIndex(const std::vector<kvrpcpb::ReadIndexRequest> & req, uint64_t timeout_ms) const
+BatchReadIndexRes TiFlashRaftProxyHelper::batchReadIndex(const std::vector<kvrpcpb::ReadIndexRequest> & req, uint64_t timeout_ms, bool use_cache) const
 {
     std::vector<std::string> req_strs;
     req_strs.reserve(req.size());
+    int idx = 0;
+    std::string key;
+    if (use_cache) {
+        key.reserve(1024);
+        for (const auto & r : req) {
+            key.append(r.context().DebugString());
+            key.append("|");
+            if (r.ranges().size()) key.append(r.ranges(0).DebugString());
+            key.append("||");
+        }
+        {
+            std::unique_lock<std::mutex> lock(learner_cache_mutex);
+            if (learner_cache.count(key)) {
+                // std::cerr<<"ReadIndexRequest.cached! "<<std::endl;
+                return *learner_cache[key];
+            }
+        }
+    }
     for (const auto & r : req)
     {
         req_strs.emplace_back(r.SerializeAsString());
+        // std::cerr<<"ReadIndexRequest. idx, req: "<<idx<<" , "<<r.DebugString()<<std::endl;
+        idx++;
     }
     CppStrVec data(std::move(req_strs));
     auto outer_view = data.intoOuterView();
-    BatchReadIndexRes res;
-    res.reserve(req.size());
-    fn_handle_batch_read_index(proxy_ptr, outer_view, &res, timeout_ms);
-    return res;
+    std::shared_ptr<BatchReadIndexRes> res = std::make_shared<BatchReadIndexRes>();
+    res->reserve(req.size());
+    fn_handle_batch_read_index(proxy_ptr, outer_view, res.get(), timeout_ms);
+    if (use_cache) {
+        std::unique_lock<std::mutex> lock(learner_cache_mutex);
+        if (!learner_cache.count(key)) {
+            learner_cache[key] = res;
+        }
+    }
+    idx = 0;
+    for (const auto & r : *res)
+    {
+        // std::cerr<<"ReadIndexRequest. idx, status, res: "<<idx<<" , "<<r.second<<" , "<<r.first.DebugString()<<std::endl;
+        idx++;
+    }
+    return *res;
 }
 
 struct PreHandledSnapshotWithBlock

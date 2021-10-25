@@ -6,7 +6,9 @@
 #include <DataTypes/IDataType.h>
 #include <DataTypes/NestedUtils.h>
 #include <IO/WriteHelpers.h>
-
+ std::atomic<long long> idt_tot_cost;
+ std::atomic<long long> idt_read_cnt;
+ std::atomic<long long> idt_last_print;
 
 namespace DB
 {

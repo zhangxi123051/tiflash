@@ -18,6 +18,20 @@
 
 #include <ext/scope_guard.h>
 
+#include <chrono>
+#include <iostream>
+#include <sys/time.h>
+#include <ctime>
+
+using std::cout; using std::endl;
+
+time_t gettimems() {
+    struct timeval time_now{};
+    gettimeofday(&time_now, nullptr);
+    time_t msecs_time = (time_now.tv_sec * 1000) + (time_now.tv_usec / 1000);
+    return msecs_time;
+}
+
 namespace DB
 {
 namespace ErrorCodes
@@ -33,12 +47,12 @@ FlashService::FlashService(IServer & server_)
     , log(&Poco::Logger::get("FlashService"))
 {
     auto settings = server_.context().getSettingsRef();
-    const size_t default_size = 2 * getNumberOfPhysicalCPUCores();
+    const size_t default_size =  getNumberOfPhysicalCPUCores();
 
     size_t cop_pool_size = static_cast<size_t>(settings.cop_pool_size);
     cop_pool_size = cop_pool_size ? cop_pool_size : default_size;
     LOG_INFO(log, "Use a thread pool with " << cop_pool_size << " threads to handle cop requests.");
-    cop_pool = std::make_unique<ThreadPool>(cop_pool_size, [] { setThreadName("cop-pool"); });
+    cop_pool = std::make_unique<ThreadPool>(400, [] { setThreadName("cop-pool"); });
 
     size_t batch_cop_pool_size = static_cast<size_t>(settings.batch_cop_pool_size);
     batch_cop_pool_size = batch_cop_pool_size ? batch_cop_pool_size : default_size;
@@ -122,6 +136,7 @@ grpc::Status FlashService::Coprocessor(
     const ::mpp::DispatchTaskRequest * request,
     ::mpp::DispatchTaskResponse * response)
 {
+    long startms = gettimems();
     CPUAffinityManager::getInstance().bindSelfGrpcThread();
     LOG_DEBUG(log, __PRETTY_FUNCTION__ << ": Handling mpp dispatch request: " << request->DebugString());
 
@@ -144,9 +159,66 @@ grpc::Status FlashService::Coprocessor(
         return status;
     }
 
+    // for(int i =0; i < 10; i++) {
+    //     auto [context, status] = createDBContext(grpc_context);
+    //     mpp::DispatchTaskRequest req(*request);
+    //     req.mutable_meta()->set_start_ts(req.meta().start_ts()*10 + i);
+    //     MPPHandler mpp_handler(req);
+    //     mpp_handler.execute(context, response, true, cop_pool.get());
+    // }
     MPPHandler mpp_handler(*request);
-    return mpp_handler.execute(context, response);
+    ::grpc::Status retstatus = mpp_handler.execute(context, response, false, cop_pool.get());
+    long endms = gettimems();
+     LOG_INFO(log, "dispatch_mpp_request, cost: " << (endms-startms)<<"ms");
+
+    return retstatus;
 }
+/*
+::grpc::Status FlashService::DispatchMPPTask(
+    ::grpc::ServerContext * grpc_context,
+    const ::mpp::DispatchTaskRequest * request,
+    ::mpp::DispatchTaskResponse * response)
+{
+    CPUAffinityManager::getInstance().bindSelfGrpcThread();
+    LOG_DEBUG(log, __PRETTY_FUNCTION__ << ": Handling mpp dispatch request: " << request->DebugString());
+
+    if (!security_config.checkGrpcContext(grpc_context))
+    {
+        return grpc::Status(grpc::PERMISSION_DENIED, tls_err_msg);
+    }
+    GET_METRIC(tiflash_coprocessor_request_count, type_dispatch_mpp_task).Increment();
+    GET_METRIC(tiflash_coprocessor_handling_request_count, type_dispatch_mpp_task).Increment();
+    Stopwatch watch;
+    SCOPE_EXIT({
+        GET_METRIC(tiflash_coprocessor_handling_request_count, type_dispatch_mpp_task).Decrement();
+        GET_METRIC(tiflash_coprocessor_request_duration_seconds, type_dispatch_mpp_task).Observe(watch.elapsedSeconds());
+        GET_METRIC(tiflash_coprocessor_response_bytes).Increment(response->ByteSizeLong());
+    });
+
+
+    const char * bins = request->encoded_plan().c_str();
+    int cnt = (int)(request->encoded_plan().c_str()[0]);
+    int offset = 1;
+    for(int i = 0; i < cnt; i++) {
+        const unsigned int* cnt_ptr = (const unsigned int*)(&(bins[offset]));
+        int curlen = *cnt_ptr;
+        offset += 4;
+        mpp::DispatchTaskRequest curreq;
+        curreq.ParseFromArray(&(bins[offset]), curlen);
+        auto [context, status] = createDBContext(grpc_context);
+        if (!status.ok())
+        {
+            return status;
+        }
+        MPPHandler mpp_handler(curreq);
+        mpp_handler.execute(context, response);
+        offset += curlen;
+    }
+    return ::grpc::Status::OK;
+    //    MPPHandler mpp_handler(*request);
+    //    return mpp_handler.execute(context, response);
+}
+*/
 
 ::grpc::Status FlashService::IsAlive(::grpc::ServerContext * grpc_context [[maybe_unused]],
                                      const ::mpp::IsAliveRequest * request [[maybe_unused]],
@@ -176,10 +248,11 @@ grpc::Status FlashService::Coprocessor(
     CPUAffinityManager::getInstance().bindSelfGrpcThread();
     // Establish a pipe for data transferring. The pipes has registered by the task in advance.
     // We need to find it out and bind the grpc stream with it.
-    LOG_DEBUG(log, __PRETTY_FUNCTION__ << ": Handling establish mpp connection request: " << request->DebugString());
+    LOG_INFO(log, __PRETTY_FUNCTION__ << ": Handling establish mpp connection request: " << request->DebugString());
 
     if (!security_config.checkGrpcContext(grpc_context))
     {
+        LOG_ERROR(log, "establish error #0");
         return grpc::Status(grpc::PERMISSION_DENIED, tls_err_msg);
     }
     GET_METRIC(tiflash_coprocessor_request_count, type_mpp_establish_conn).Increment();
@@ -194,6 +267,7 @@ grpc::Status FlashService::Coprocessor(
     auto [context, status] = createDBContext(grpc_context);
     if (!status.ok())
     {
+        LOG_ERROR(log, "establish error #1");
         return status;
     }
 
@@ -210,14 +284,17 @@ grpc::Status FlashService::Coprocessor(
         }
         if (tunnel == nullptr)
         {
+            LOG_ERROR(log, "establish error #2");
             LOG_ERROR(log, err_msg);
             if (writer->Write(getPacketWithError(err_msg)))
             {
+                LOG_ERROR(log, "establish error #3");
                 return grpc::Status::OK;
             }
             else
             {
-                LOG_DEBUG(log, __PRETTY_FUNCTION__ << ": Write error message failed for unknown reason.");
+                LOG_ERROR(log, "establish error #4");
+                LOG_ERROR(log, __PRETTY_FUNCTION__ << ": Write error message failed for unknown reason.");
                 return grpc::Status(grpc::StatusCode::UNKNOWN, "Write error message failed for unknown reason.");
             }
         }

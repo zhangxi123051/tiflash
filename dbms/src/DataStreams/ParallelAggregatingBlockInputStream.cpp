@@ -2,7 +2,7 @@
 #include <DataStreams/MergingAggregatedMemoryEfficientBlockInputStream.h>
 #include <DataStreams/NativeBlockInputStream.h>
 #include <DataStreams/ParallelAggregatingBlockInputStream.h>
-
+#include <iostream>
 
 namespace ProfileEvents
 {
@@ -25,7 +25,7 @@ ParallelAggregatingBlockInputStream::ParallelAggregatingBlockInputStream(
     , aggregator(params)
     , file_provider(file_provider_)
     , final(final_)
-    , max_threads(std::min(inputs.size(), max_threads_))
+    , max_threads(std::min(inputs.size(), 1))
     , temporary_data_merge_threads(temporary_data_merge_threads_)
     , keys_size(params.keys_size)
     , aggregates_size(params.aggregates_size)
@@ -33,6 +33,8 @@ ParallelAggregatingBlockInputStream::ParallelAggregatingBlockInputStream(
     , processor(inputs, additional_input_at_end, max_threads, handler)
     , log(getMPPTaskLog(log_, getName()))
 {
+    tot_cost = 0.0;
+    read_cnt = 0;
     children = inputs;
     if (additional_input_at_end)
         children.push_back(additional_input_at_end);
@@ -198,9 +200,9 @@ void ParallelAggregatingBlockInputStream::execute()
 
     for (auto & elem : many_data)
         elem = std::make_shared<AggregatedDataVariants>();
-
-    processor.process();
-    processor.wait();
+    processor.thread(0);
+    // processor.process();
+    // processor.wait();
 
     rethrowFirstException(exceptions);
 
@@ -208,7 +210,9 @@ void ParallelAggregatingBlockInputStream::execute()
         return;
 
     double elapsed_seconds = watch.elapsedSeconds();
-
+    tot_cost += elapsed_seconds;
+    read_cnt ++;
+    // std::cerr<<"agg processor.thread() cost: "<<elapsed_seconds<<"s"<<std::endl;;
     size_t total_src_rows = 0;
     size_t total_src_bytes = 0;
     for (size_t i = 0; i < max_threads; ++i)

@@ -128,10 +128,13 @@ void MPPTunnelBase<Writer>::clearSendQueue()
     }
 }
 
+
+
 /// to avoid being blocked when pop(), we should send nullptr into send_queue in all cases
 template <typename Writer>
 void MPPTunnelBase<Writer>::sendLoop()
 {
+    loop = true;
     if (is_local)
         return; // sendLoop is useless in local environment
     try
@@ -148,7 +151,7 @@ void MPPTunnelBase<Writer>::sendLoop()
             }
             else
             {
-                if (!writer->Write(*res))
+                if (writer && !writer->Write(*res))
                 {
                     finishWithLock();
                     auto msg = " grpc writes failed.";
@@ -216,6 +219,10 @@ std::shared_ptr<mpp::MPPDataPacket> MPPTunnelBase<Writer>::readForLocal()
     return nullptr;
 }
 
+template <typename Writer>
+static void tunnelSendLoop(MPPTunnelBase<Writer> * tunnel) {
+    tunnel->sendLoop();
+}
 
 template <typename Writer>
 void MPPTunnelBase<Writer>::connect(Writer * writer_)
@@ -226,7 +233,20 @@ void MPPTunnelBase<Writer>::connect(Writer * writer_)
 
     LOG_DEBUG(log, "ready to connect");
     writer = writer_;
-    send_thread = std::make_unique<std::thread>(ThreadFactory(true, "MPPTunnel").newThread([this] { sendLoop(); }));
+    if (!is_local) {
+        if (thd_pool) {
+            loop = false;
+            thd_pool->schedule(
+                [this] {
+                    tunnelSendLoop(this);
+                }
+            );
+            send_thread = nullptr;
+            while(!loop) usleep(1);
+        } else {
+            send_thread = std::make_unique<std::thread>(ThreadFactory(true, "MPPTunnel").newThread([this] { sendLoop(); }));
+        }
+    }
     connected = true;
     cv_for_connected.notify_all();
 }
