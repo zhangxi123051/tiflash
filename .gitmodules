@@ -29,9 +29,7 @@
 	path = contrib/tipb
 	url = https://github.com/pingcap/tipb.git
 	branch = master
-[submodule "contrib/client-c"]
-	path = contrib/client-c
-	url = git@github.com:tikv/client-c.git
+
 [submodule "contrib/tiflash-proxy"]
 	path = contrib/tiflash-proxy
 	url = git@github.com:pingcap/tidb-engine-ext.git
